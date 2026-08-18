@@ -1446,7 +1446,7 @@ export function UniversitySection() {
                     <div className="space-y-2">
                       <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest block">Cohort Strengths</span>
                       <ul className="list-disc list-inside text-xs text-text-secondary space-y-1.5">
-                        {aiReport.mainStrengths.map((str, idx) => (
+                        {(aiReport.mainStrengths || []).map((str, idx) => (
                           <li key={idx} className="leading-relaxed font-medium">{str}</li>
                         ))}
                       </ul>
@@ -1454,7 +1454,7 @@ export function UniversitySection() {
                     <div className="space-y-2">
                       <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest block">Critical Gaps / Weaknesses</span>
                       <ul className="list-disc list-inside text-xs text-text-secondary space-y-1.5">
-                        {aiReport.coreSkillGaps.map((gap, idx) => (
+                        {(aiReport.coreSkillGaps || []).map((gap, idx) => (
                           <li key={idx} className="leading-relaxed font-medium">{gap}</li>
                         ))}
                       </ul>

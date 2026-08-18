@@ -394,10 +394,22 @@ export function CVUpload({ setView, onComplete }: { setView: (view: any) => void
           });
           const base64 = await base64Promise;
           result = await analyzeCV(undefined, { data: base64, mimeType: 'application/pdf' });
+        } else if (file.type.startsWith('image/')) {
+          const reader = new FileReader();
+          const base64Promise = new Promise<string>((resolve) => {
+            reader.onload = () => resolve(reader.result?.toString().split(',')[1] || '');
+            reader.readAsDataURL(file);
+          });
+          const base64 = await base64Promise;
+          result = await analyzeCV(undefined, { data: base64, mimeType: file.type });
         } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
           const arrayBuffer = await file.arrayBuffer();
           const docxResult = await mammoth.extractRawText({ arrayBuffer });
           result = await analyzeCV(docxResult.value);
+        } else {
+          // General text or fallback
+          const text = await file.text();
+          result = await analyzeCV(text || cvText);
         }
       } else {
         result = await analyzeCV(cvText);
