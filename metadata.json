@@ -1,0 +1,8 @@
+{
+  "name": "CareerBridge",
+  "description": "A smart career guidance and industry-academia collaboration platform helping graduates become job-ready through AI-powered CV analysis, skill gap detection, and mentor connections.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

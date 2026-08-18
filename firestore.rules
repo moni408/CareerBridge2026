@@ -1,0 +1,263 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: userId (UID)
+    // Fields:
+    //   - uid: string (required, immutable)
+    //   - email: string (required, immutable)
+    //   - displayName: string (required)
+    //   - role: string (graduate, mentor, researcher)
+    //   - skills: list (strings)
+    //   - education: list (strings)
+    //   - experience: list (strings)
+    //   - goals: list (strings)
+    //   - readinessScore: number
+    //   - profileAnalyzed: bool
+    //   - createdAt: timestamp
+    //
+    // Collection: jobs
+    // Fields: title, company, requirements, description, location, type, postedAt
+    //
+    // Collection: mentors
+    // Fields: uid, name, expertise, bio, rating, available
+    //
+    // Collection: learning_resources
+    // Fields: title, type, url, skillsCovered
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        ((request.auth.token.keys().hasAll(['email']) && request.auth.token.email.lower() == "ayeshasiddikamoni408@gmail.com") ||
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')); 
+    }
+
+    function isIndustry() {
+      return isAuthenticated() && 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'industry');
+    }
+
+    function isUniversity() {
+      return isAuthenticated() && 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'university');
+    }
+
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid;
+    }
+
+    function emailUnchanged() {
+      return !('email' in request.resource.data) || request.resource.data.email == resource.data.email;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role']) &&
+             data.uid is string &&
+             data.email is string &&
+             data.role in ['graduate', 'mentor', 'researcher', 'admin', 'industry', 'university'] &&
+             (!('verified' in data) || data.verified is bool) &&
+             (!('verificationStatus' in data) || data.verificationStatus in ['pending', 'verified', 'rejected']);
+    }
+
+    function isValidJob(data) {
+      return data.keys().hasAll(['title', 'company', 'location', 'description', 'requirements', 'postedAt']) &&
+             data.title is string && data.company is string;
+    }
+
+    function isValidAdminLog(data) {
+      return data.keys().hasAll(['action', 'adminId', 'timestamp']) &&
+             data.adminId == request.auth.uid &&
+             (data.timestamp is timestamp || data.timestamp == request.time);
+    }
+
+    // Rules
+    match /users/{userId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /jobs/{jobId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /admin_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && isValidAdminLog(request.resource.data);
+    }
+
+    match /students/{studentId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (isOwner(studentId) || isAdmin());
+    }
+
+    match /industry_partners/{partnerId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (isOwner(partnerId) || isAdmin());
+    }
+
+    match /universities/{universityId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (isOwner(universityId) || isAdmin());
+    }
+
+    match /mentors/{mentorId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (isOwner(mentorId) || isAdmin());
+    }
+
+    match /mentorship_requests/{requestId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.menteeId || request.auth.uid == resource.data.mentorId || isAdmin());
+      allow create: if isAuthenticated() && (request.auth.uid == request.resource.data.menteeId || request.auth.uid == request.resource.data.mentorId || isAdmin());
+      allow update: if isAuthenticated() && (request.auth.uid == resource.data.mentorId || request.auth.uid == resource.data.menteeId || isAdmin()) && request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'declineReason']);
+      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.menteeId || request.auth.uid == resource.data.mentorId || isAdmin());
+    }
+
+    match /mentorship_connections/{connectionId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.menteeId || request.auth.uid == resource.data.mentorId || isAdmin());
+      allow create: if isAuthenticated(); 
+      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.menteeId || request.auth.uid == resource.data.mentorId || isAdmin());
+      allow update: if isAuthenticated() && (request.auth.uid == resource.data.menteeId || request.auth.uid == resource.data.mentorId || isAdmin());
+    }
+
+    match /mentorship_connections/{connectionId}/messages/{messageId} {
+      allow read: if isAuthenticated() && (
+        get(/databases/$(database)/documents/mentorship_connections/$(connectionId)).data.menteeId == request.auth.uid ||
+        get(/databases/$(database)/documents/mentorship_connections/$(connectionId)).data.mentorId == request.auth.uid
+      );
+      allow create: if isAuthenticated() && (
+        get(/databases/$(database)/documents/mentorship_connections/$(connectionId)).data.menteeId == request.auth.uid ||
+        get(/databases/$(database)/documents/mentorship_connections/$(connectionId)).data.mentorId == request.auth.uid
+      ) && request.resource.data.senderId == request.auth.uid;
+    }
+
+    match /sessions/{sessionId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAuthenticated();
+    }
+
+    match /skill_reviews/{reviewId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAuthenticated();
+    }
+
+    match /earned_badges/{badgeId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAuthenticated();
+    }
+
+    match /notifications/{notificationId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /learning_resources/{resourceId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /activities/{activityId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && (
+        isAdmin() || 
+        ('postedBy' in resource.data && resource.data.postedBy == request.auth.uid) ||
+        ('mentorId' in resource.data && resource.data.mentorId == request.auth.uid)
+      );
+    }
+
+    match /gaps/{gapId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /tasks/{taskId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /submissions/{submissionId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /reviews/{reviewId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /xp_events/{eventId} {
+      allow read: if isAuthenticated() && resource.data.mentorId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.mentorId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    match /admin_flags/{flagId} {
+      allow read: if isAuthenticated() && (resource.data.mentorId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+
+    match /admin_notifications/{notificationId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /sent_emails/{emailId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+
+    match /one_to_one_sessions/{sessionId} {
+      allow read: if isAuthenticated() && (resource.data.mentorId == request.auth.uid || resource.data.menteeId == request.auth.uid);
+      allow create: if isAuthenticated() && (request.resource.data.mentorId == request.auth.uid || request.resource.data.menteeId == request.auth.uid);
+      allow update: if isAuthenticated() && (resource.data.mentorId == request.auth.uid || resource.data.menteeId == request.auth.uid);
+      allow delete: if isAuthenticated() && (resource.data.mentorId == request.auth.uid || resource.data.menteeId == request.auth.uid);
+    }
+
+    match /mentor_chat_messages/{messageId} {
+      allow read: if isAuthenticated() && (resource.data.mentorId == request.auth.uid || resource.data.menteeId == request.auth.uid);
+      allow create: if isAuthenticated() && (request.resource.data.mentorId == request.auth.uid || request.resource.data.menteeId == request.auth.uid) && request.resource.data.senderId == request.auth.uid;
+      allow update: if isAuthenticated() && (resource.data.mentorId == request.auth.uid || resource.data.menteeId == request.auth.uid);
+      allow delete: if isAuthenticated() && (resource.data.mentorId == request.auth.uid || resource.data.menteeId == request.auth.uid);
+    }
+
+    match /industry_sessions/{sessionId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /industry_opinions/{opinionId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /endorsements/{endorsementId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /learning_modules/{moduleId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /learning_sessions/{sessionId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /certificates/{certId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /test/connection {
+      allow read: if true;
+    }
+  }
+}

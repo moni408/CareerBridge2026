@@ -1,0 +1,374 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Stores user profile information, skills, and career data.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique identifier for the user." },
+        "email": { "type": "string", "format": "email", "description": "User's email address." },
+        "displayName": { "type": "string", "description": "User's full name." },
+        "role": { "type": "string", "enum": ["graduate", "mentor", "researcher", "admin"], "description": "The user's role in the system." },
+        "skills": { "type": "array", "items": { "type": "string" }, "description": "List of technical and soft skills." },
+        "education": { "type": "array", "items": { "type": "string" }, "description": "Educational background." },
+        "experience": { "type": "array", "items": { "type": "string" }, "description": "Work or project experience." },
+        "goals": { "type": "array", "items": { "type": "string" }, "description": "Career goals." },
+        "readinessScore": { "type": "number", "description": "Calculated job readiness score (0-100)." },
+        "profileAnalyzed": { "type": "boolean", "description": "Whether the CV has been analyzed." },
+        "verified": { "type": "boolean", "description": "Whether the account has been verified by an admin." },
+        "verificationStatus": { "type": "string", "enum": ["pending", "verified", "rejected"], "description": "The historical status of verification." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Account creation timestamp." }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Job": {
+      "title": "Job Posting",
+      "description": "Details of available job opportunities.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "company": { "type": "string" },
+        "location": { "type": "string" },
+        "jobType": { "type": "string", "enum": ["full-time", "part-time", "internship", "contract"] },
+        "industry": { "type": "string" },
+        "description": { "type": "string" },
+        "requirements": { "type": "string" },
+        "deadline": { "type": "string", "format": "date-time" },
+        "applicationLink": { "type": "string" },
+        "postedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "company", "location", "jobType", "description", "requirements", "postedAt"]
+    },
+    "AdminLog": {
+      "title": "Administrative Action Log",
+      "description": "Audit trail for administrative changes.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "action": { "type": "string" },
+        "targetId": { "type": "string" },
+        "targetType": { "type": "string" },
+        "adminId": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["action", "adminId", "timestamp"]
+    },
+    "Mentor": {
+      "title": "Mentor Profile",
+      "description": "Detailed profile for mentors and industry experts.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "expertise": { "type": "array", "items": { "type": "string" } },
+        "bio": { "type": "string" },
+        "rating": { "type": "number" },
+        "available": { "type": "boolean" },
+        "industry": { "type": "string" }
+      },
+      "required": ["uid", "name", "expertise"]
+    },
+    "MentorshipRequest": {
+      "title": "Mentorship Request",
+      "description": "A request from a mentee to a mentor.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "menteeId": { "type": "string" },
+        "mentorId": { "type": "string" },
+        "menteeName": { "type": "string" },
+        "message": { "type": "string" },
+        "careerGoal": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["menteeId", "mentorId", "status"]
+    },
+    "MentorshipConnection": {
+      "title": "Mentorship Connection",
+      "description": "An active relationship between a mentor and mentee.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "mentorId": { "type": "string" },
+        "menteeId": { "type": "string" },
+        "mentorName": { "type": "string" },
+        "menteeName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["mentorId", "menteeId"]
+    },
+    "Message": {
+      "title": "Chat Message",
+      "description": "A message within a mentorship connection.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "senderId": { "type": "string" },
+        "text": { "type": "string" },
+        "fileUrl": { "type": "string" },
+        "fileName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderId", "text", "createdAt"]
+    },
+    "LearningResource": {
+      "title": "Learning Resource",
+      "description": "Courses and tutorials recommended for skill gap closure.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "type": { "type": "string", "enum": ["course", "tutorial", "article"] },
+        "url": { "type": "string", "format": "uri" },
+        "skillsCovered": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["title", "url", "skillsCovered"]
+    },
+    "Activity": {
+      "title": "Activity Log",
+      "description": "Chronological history of mentor achievements, verified stages, and reviews.",
+      "type": "object",
+      "properties": {
+        "mentorId": { "type": "string" },
+        "html": { "type": "string" },
+        "type": { "type": "string", "enum": ["success", "info", "award", "warning"] },
+        "ts": { "type": "number" }
+      },
+      "required": ["mentorId", "html", "type", "ts"]
+    },
+    "Gap": {
+      "title": "Skill Gap",
+      "description": "An identified skill gap for a mentee.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "connId": { "type": "string" },
+        "menteeId": { "type": "string" },
+        "title": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["connId", "title"]
+    },
+    "Task": {
+      "title": "Mentorship Task",
+      "description": "A task assigned to resolve a skill gap.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "connId": { "type": "string" },
+        "menteeId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["connId", "title"]
+    },
+    "Submission": {
+      "title": "Task Submission",
+      "description": "A submission made by a mentee.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "connId": { "type": "string" },
+        "taskId": { "type": "string" },
+        "menteeId": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["connId", "taskId"]
+    },
+    "Review": {
+      "title": "Submission Review",
+      "description": "An audit/review of a submission.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "submissionId": { "type": "string" },
+        "connId": { "type": "string" },
+        "mentorId": { "type": "string" },
+        "action": { "type": "string" },
+        "feedback": { "type": "string" }
+      },
+      "required": ["submissionId", "mentorId", "action"]
+    },
+    "XPEvent": {
+      "title": "XP Event",
+      "description": "Mentorship XP change logs.",
+      "type": "object",
+      "properties": {
+        "mentorId": { "type": "string" },
+        "event": { "type": "string" },
+        "delta": { "type": "number" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["mentorId", "event", "delta"]
+    },
+    "AdminFlag": {
+      "title": "Admin Flag",
+      "description": "An anti-gaming monitoring flag.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "mentorId": { "type": "string" },
+        "type": { "type": "string" },
+        "severity": { "type": "string" }
+      },
+      "required": ["mentorId", "type"]
+    },
+    "OneToOneSession": {
+      "title": "One to One Session",
+      "description": "A scheduled one-to-one mentoring session.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "mentorId": { "type": "string" },
+        "mentorName": { "type": "string" },
+        "menteeId": { "type": "string" },
+        "menteeName": { "type": "string" },
+        "connectionId": { "type": "string" },
+        "date": { "type": "string" },
+        "timeSlot": { "type": "string" },
+        "type": { "type": "string" },
+        "dateTime": { "type": "string" },
+        "notes": { "type": "string" },
+        "googleCalendarLink": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "mentorId", "menteeId", "dateTime"]
+    },
+    "MentorChatMessage": {
+      "title": "Mentor Chat Message",
+      "description": "A real-time message exchanged in mentor-mentee chat rooms.",
+      "type": "object",
+      "properties": {
+        "connectionId": { "type": "string" },
+        "mentorId": { "type": "string" },
+        "menteeId": { "type": "string" },
+        "text": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "senderRole": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["connectionId", "mentorId", "menteeId", "text", "senderId"]
+    },
+    "IndustrySession": {
+      "title": "Industry Session Request",
+      "description": "Joint academic talk or webinar proposal from a university to an industry partner.",
+      "type": "object",
+      "properties": {
+        "universityId": { "type": "string" },
+        "universityName": { "type": "string" },
+        "department": { "type": "string" },
+        "industryId": { "type": "string" },
+        "industryName": { "type": "string" },
+        "topic": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "meetingTime": { "type": "string" },
+        "meetingLink": { "type": "string" },
+        "feedback": { "type": "string" }
+      },
+      "required": ["universityId", "industryId", "topic", "status", "createdAt"]
+    },
+    "IndustryOpinion": {
+      "title": "Industry Student Opinion Feedback",
+      "description": "Organizational evaluation and guidelines provided by industry partners for a university student cohort after a session.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "sessionTopic": { "type": "string" },
+        "industryId": { "type": "string" },
+        "industryName": { "type": "string" },
+        "universityId": { "type": "string" },
+        "universityName": { "type": "string" },
+        "rating": { "type": "string" },
+        "technicalReview": { "type": "string" },
+        "suggestedCurriculumFocus": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["sessionId", "industryId", "universityId", "rating", "technicalReview", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile documents."
+    },
+    "/jobs/{jobId}": {
+      "schema": "Job",
+      "description": "Job postings collection."
+    },
+    "/mentors/{mentorId}": {
+      "schema": "Mentor",
+      "description": "Mentor profiles collection."
+    },
+    "/mentorship_requests/{requestId}": {
+      "schema": "MentorshipRequest",
+      "description": "Collection of mentorship requests."
+    },
+    "/mentorship_connections/{connectionId}": {
+      "schema": "MentorshipConnection",
+      "description": "Active mentorship relationships."
+    },
+    "/mentorship_connections/{connectionId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Messages within a connection."
+    },
+    "/learning_resources/{resourceId}": {
+      "schema": "LearningResource",
+      "description": "Learning resources collection."
+    },
+    "/admin_logs/{logId}": {
+      "schema": "AdminLog",
+      "description": "Collection of administrative audit logs."
+    },
+    "/activities/{activityId}": {
+      "schema": "Activity",
+      "description": "Chronological logs of activities performed by mentors."
+    },
+    "/gaps/{gapId}": {
+      "schema": "Gap",
+      "description": "Core technical progress gaps."
+    },
+    "/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "Technical task definitions designed by mentors."
+    },
+    "/submissions/{submissionId}": {
+      "schema": "Submission",
+      "description": "Technical code submissions uploaded by mentees."
+    },
+    "/reviews/{reviewId}": {
+      "schema": "Review",
+      "description": "Complete mentor audit review details."
+    },
+    "/xp_events/{eventId}": {
+      "schema": "XPEvent",
+      "description": "Audit trails for awarded XP points."
+    },
+    "/admin_flags/{flagId}": {
+      "schema": "AdminFlag",
+      "description": "Anti-gaming telemetry logs monitored by administrators."
+    },
+    "/one_to_one_sessions/{sessionId}": {
+      "schema": "OneToOneSession",
+      "description": "Collection of scheduled 1-to-1 mentorship sessions."
+    },
+    "/mentor_chat_messages/{messageId}": {
+      "schema": "MentorChatMessage",
+      "description": "Collection of real-time mentor-mentee chat messages."
+    },
+    "/industry_sessions/{sessionId}": {
+      "schema": "IndustrySession",
+      "description": "Joint academic talk or webinar proposals between university and industry partners."
+    },
+    "/industry_opinions/{opinionId}": {
+      "schema": "IndustryOpinion",
+      "description": "Joint evaluations, reviews, and dynamic feedback opinions of student cohorts submitted by industry partners."
+    }
+  }
+}
