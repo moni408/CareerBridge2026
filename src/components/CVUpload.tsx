@@ -406,40 +406,104 @@ export function CVUpload({ setView, onComplete }: { setView: (view: any) => void
       if (result) {
         setAnalysisResult(result);
 
-        const activeSkillNames = result.skills ? result.skills.map((s: any) => s.name) : [];
+        const extracted = result.extractedCV || ({} as Partial<GeneratedCV>);
+
+        // Gather all skills to ensure none are missing
+        const allExtractedSkillNames = new Set<string>();
+        if (Array.isArray(result.skills)) {
+          result.skills.forEach((s: any) => {
+            if (s?.name) allExtractedSkillNames.add(s.name.trim());
+          });
+        }
+        if (Array.isArray(extracted.skills)) {
+          extracted.skills.forEach((group: any) => {
+            if (typeof group === 'string') {
+              allExtractedSkillNames.add(group.trim());
+            } else if (Array.isArray(group?.items)) {
+              group.items.forEach((item: string) => {
+                if (item) allExtractedSkillNames.add(item.trim());
+              });
+            }
+          });
+        }
+
+        // Build comprehensive categorized skills structure
+        let categorizedSkills: { category: string; items: string[] }[] = [];
+        if (Array.isArray(extracted.skills) && extracted.skills.length > 0 && typeof extracted.skills[0] === 'object') {
+          categorizedSkills = extracted.skills.map((group: any) => ({
+            category: group.category || 'Technical Skills',
+            items: Array.isArray(group.items) ? group.items : [String(group.items || '')]
+          }));
+        } else if (Array.isArray(result.skills) && result.skills.length > 0) {
+          const techSkills = result.skills.filter((s: any) => s.category === 'technical').map((s: any) => s.name);
+          const softSkills = result.skills.filter((s: any) => s.category === 'soft').map((s: any) => s.name);
+          if (techSkills.length > 0) categorizedSkills.push({ category: 'Technical Skills', items: techSkills });
+          if (softSkills.length > 0) categorizedSkills.push({ category: 'Soft Skills & Leadership', items: softSkills });
+        }
+
+        if (categorizedSkills.length === 0 && allExtractedSkillNames.size > 0) {
+          categorizedSkills.push({ category: 'Key Competencies', items: Array.from(allExtractedSkillNames) });
+        }
+
+        // Build complete newGeneratedCV with all extracted CV props preserved
         const newGeneratedCV: GeneratedCV = {
-          fullName: profile?.displayName || builderFormData.fullName || 'Professional Resume',
-          role: result.targetRole || profile?.role || builderFormData.role || 'Software Engineer',
-          email: profile?.email || builderFormData.email || '',
-          phone: builderFormData.phone || '',
-          location: builderFormData.location || '',
-          github: builderFormData.github || '',
-          linkedin: builderFormData.linkedin || '',
-          portfolio: builderFormData.portfolio || '',
-          links: [],
-          summary: profile?.summary || builderFormData.summary || `Results-oriented professional with specialized expertise in ${activeSkillNames.slice(0, 5).join(', ')}.`,
-          education: result.academicBackground?.map(school => ({
-            school,
-            degree: 'Degree / Academic Focus',
-            year: 'Recent'
-          })) || builderFormData.education,
-          experience: builderFormData.experience.filter(e => e.company).map(e => ({ ...e, description: [e.description] })) || [],
-          projects: result.projects?.map(p => {
-            const cleanStack = sanitizeTechStack(p.techStack);
-            return {
-              name: p.name,
-              techStack: cleanStack,
-              description: (p.description && p.description.length > 0)
-                ? p.description 
-                : [`Built and delivered ${p.name}${cleanStack.length > 0 ? ' leveraging ' + cleanStack.join(', ') : ''}.`]
-            };
-          }) || [],
-          skills: [
-            { category: 'Extracted Skills & Competencies', items: activeSkillNames }
-          ],
-          languages: builderFormData.languages ? builderFormData.languages.split(',').map(s => s.trim()) : ['English'],
-          interests: builderFormData.interests ? builderFormData.interests.split(',').map(s => s.trim()) : [],
-          certifications: result.certifications || []
+          fullName: extracted.fullName || profile?.displayName || builderFormData.fullName || 'Candidate Resume',
+          role: extracted.role || result.targetRole || profile?.role || builderFormData.role || 'Professional Candidate',
+          email: extracted.email || profile?.email || builderFormData.email || '',
+          phone: extracted.phone || builderFormData.phone || '',
+          location: extracted.location || builderFormData.location || '',
+          github: extracted.github || builderFormData.github || '',
+          linkedin: extracted.linkedin || builderFormData.linkedin || '',
+          portfolio: extracted.portfolio || builderFormData.portfolio || '',
+          links: extracted.links || [],
+          summary: extracted.summary || profile?.summary || builderFormData.summary || `Results-driven professional with proven expertise in ${Array.from(allExtractedSkillNames).slice(0, 5).join(', ')}.`,
+          education: (extracted.education && extracted.education.length > 0)
+            ? extracted.education
+            : (result.academicBackground && result.academicBackground.length > 0)
+            ? result.academicBackground.map(school => ({
+                school,
+                degree: 'Academic Degree / Major',
+                year: 'Completed'
+              }))
+            : builderFormData.education,
+          experience: (extracted.experience && extracted.experience.length > 0)
+            ? extracted.experience
+            : builderFormData.experience.filter(e => e.company).map(e => ({ ...e, description: [e.description] })) || [],
+          projects: (extracted.projects && extracted.projects.length > 0)
+            ? extracted.projects.map(p => ({
+                ...p,
+                techStack: sanitizeTechStack(p.techStack)
+              }))
+            : (result.projects && result.projects.length > 0)
+            ? result.projects.map(p => {
+                const cleanStack = sanitizeTechStack(p.techStack);
+                return {
+                  name: p.name,
+                  techStack: cleanStack,
+                  description: (p.description && p.description.length > 0)
+                    ? p.description 
+                    : [`Designed and delivered ${p.name}${cleanStack.length > 0 ? ' using ' + cleanStack.join(', ') : ''}.`]
+                };
+              })
+            : [],
+          skills: categorizedSkills,
+          languages: (extracted.languages && extracted.languages.length > 0)
+            ? extracted.languages
+            : builderFormData.languages
+            ? builderFormData.languages.split(',').map(s => s.trim())
+            : ['English (Fluent)'],
+          interests: (extracted.interests && extracted.interests.length > 0)
+            ? extracted.interests
+            : builderFormData.interests
+            ? builderFormData.interests.split(',').map(s => s.trim())
+            : [],
+          certifications: (extracted.certifications && extracted.certifications.length > 0)
+            ? extracted.certifications
+            : (result.certifications && result.certifications.length > 0)
+            ? result.certifications
+            : builderFormData.certifications
+            ? builderFormData.certifications.split(',').map(s => s.trim())
+            : []
         };
 
         setGeneratedCV(newGeneratedCV);

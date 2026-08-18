@@ -110,28 +110,31 @@ export interface AnalysisResult {
     mentors: { name: string, expertise: string[], rationale: string }[];
     resources: string[];
   };
+  extractedCV?: GeneratedCV;
 }
 
 export async function analyzeCV(cvText?: string, fileData?: { data: string, mimeType: string }): Promise<AnalysisResult> {
   const parts: any[] = [
-    { text: `Analyze the following CV and provide a detailed career readiness report. 
-    1. Extract all Technical Skills.
-    2. INFER Soft Skills: Do not just looks for buzzwords. Infer soft skills from experience bullet points (e.g., extract 'Leadership' if they managed others, 'Stakeholder Management' if they worked with clients, 'Presentation' if they spoke at events).
-    3. Extract projects with their tech stacks and full key description bullet points. For techStack, include ONLY concise tool or technology names (e.g. ["Figma", "Tailwind CSS", "HTML"]). Maximum 6 items per project. DO NOT include long sentences, reasoning, or phrases like "Inferred-from".
-    4. Extract academic background and certifications.
-    5. Extract or infer the user's target job role and preferred industry.
-    6. CRITICALLY SCORE each skill (0-100%) based on:
-       - Depth of usage (once vs multiple projects)
-       - Complexity and relevance
-       - Academic backing
-       - Provide a one-line reason for each score.
-    7. Calculate the Mean Skill Score (average of all scores).
-    8. Identify skill gaps based on the target role.
-    9. Provide exactly 3 job recommendations (title, company, matchScore) and 3 mentor recommendations with rationale based on user's weakest skills.` }
+    { text: `You are an elite career intelligence engine. Analyze the provided CV/resume in rapid depth and perform TWO tasks:
+    TASK 1: Extract the FULL structured CV props so NO skills, contact info, experiences, or project details are lost:
+      - fullName, role/headline, email, phone, location, linkedin, github, portfolio.
+      - summary (concise 2-3 sentence executive summary).
+      - education: array of { school, degree, year, gpa, coursework }.
+      - experience: array of { company, role, duration, description (bullet points), location }.
+      - projects: array of { name, techStack (clean names only), description (bullet points) }.
+      - skills: array of categorized skills { category: string, items: string[] } (e.g. "Languages", "Frontend & Backend", "Databases & Cloud", "Tools & DevOps", "Soft Skills & Management"). Ensure ALL technical and soft skills from the resume are captured.
+      - languages, interests, certifications.
+    
+    TASK 2: Perform instant career readiness scoring & recommendations:
+      - CRITICALLY score each technical and soft skill (0-100%) with category ('technical' | 'soft') and short reason.
+      - Calculate meanSkillScore.
+      - Identify skill gaps and provide exactly 3 job matches & 3 mentor matches.
+    
+    Return pure JSON conforming to the schema immediately.` }
   ];
 
   if (cvText) {
-    parts.push({ text: `CV TEXT:\n${cvText}` });
+    parts.push({ text: `CV CONTENT:\n${cvText}` });
   }
 
   if (fileData) {
@@ -144,7 +147,7 @@ export async function analyzeCV(cvText?: string, fileData?: { data: string, mime
   }
 
   const response = await ai.models.generateContent({
-    model: "gemini-3.5-flash",
+    model: "gemini-3.7-flash",
     contents: { parts },
     config: {
       responseMimeType: "application/json",
@@ -208,6 +211,70 @@ export async function analyzeCV(cvText?: string, fileData?: { data: string, mime
               },
               resources: { type: Type.ARRAY, items: { type: Type.STRING } }
             }
+          },
+          extractedCV: {
+            type: Type.OBJECT,
+            properties: {
+              fullName: { type: Type.STRING },
+              role: { type: Type.STRING },
+              email: { type: Type.STRING },
+              phone: { type: Type.STRING },
+              location: { type: Type.STRING },
+              github: { type: Type.STRING },
+              linkedin: { type: Type.STRING },
+              portfolio: { type: Type.STRING },
+              summary: { type: Type.STRING },
+              education: { 
+                type: Type.ARRAY, 
+                items: { 
+                  type: Type.OBJECT, 
+                  properties: { 
+                    school: { type: Type.STRING }, 
+                    degree: { type: Type.STRING }, 
+                    year: { type: Type.STRING }, 
+                    gpa: { type: Type.STRING },
+                    coursework: { type: Type.STRING }
+                  } 
+                } 
+              },
+              experience: { 
+                type: Type.ARRAY, 
+                items: { 
+                  type: Type.OBJECT, 
+                  properties: { 
+                    company: { type: Type.STRING }, 
+                    role: { type: Type.STRING }, 
+                    duration: { type: Type.STRING }, 
+                    description: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    location: { type: Type.STRING }
+                  } 
+                } 
+              },
+              projects: { 
+                type: Type.ARRAY, 
+                items: { 
+                  type: Type.OBJECT, 
+                  properties: { 
+                    name: { type: Type.STRING }, 
+                    techStack: { type: Type.ARRAY, items: { type: Type.STRING } }, 
+                    description: { type: Type.ARRAY, items: { type: Type.STRING } } 
+                  } 
+                } 
+              },
+              skills: { 
+                type: Type.ARRAY, 
+                items: { 
+                  type: Type.OBJECT, 
+                  properties: { 
+                    category: { type: Type.STRING }, 
+                    items: { type: Type.ARRAY, items: { type: Type.STRING } } 
+                  } 
+                } 
+              },
+              languages: { type: Type.ARRAY, items: { type: Type.STRING } },
+              interests: { type: Type.ARRAY, items: { type: Type.STRING } },
+              certifications: { type: Type.ARRAY, items: { type: Type.STRING } }
+            }
           }
         },
         required: ["skills", "projects", "academicBackground", "certifications", "targetRole", "targetIndustry", "meanSkillScore", "gapAnalysis", "recommendations"]
@@ -219,6 +286,12 @@ export async function analyzeCV(cvText?: string, fileData?: { data: string, mime
     const parsed = JSON.parse(repairJSON(response.text || "{}")) as AnalysisResult;
     if (parsed && Array.isArray(parsed.projects)) {
       parsed.projects = parsed.projects.map(p => ({
+        ...p,
+        techStack: sanitizeTechStack(p.techStack)
+      }));
+    }
+    if (parsed && parsed.extractedCV && Array.isArray(parsed.extractedCV.projects)) {
+      parsed.extractedCV.projects = parsed.extractedCV.projects.map(p => ({
         ...p,
         techStack: sanitizeTechStack(p.techStack)
       }));
