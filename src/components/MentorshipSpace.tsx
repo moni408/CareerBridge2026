@@ -773,10 +773,10 @@ export function MentorshipSpace() {
                     : 'hover:bg-bg-tertiary border border-transparent'
                 }`}
               >
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-lg font-bold border transition-all duration-500 ${
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-sm font-black uppercase tracking-wider border transition-all duration-500 ${
                   selectedConn?.id === conn.id ? 'bg-primary text-white border-primary' : 'bg-bg-tertiary border-border text-text-muted group-hover:border-primary/40'
                 }`}>
-                  {(profile?.role === 'mentor' ? conn.menteeName : conn.mentorName)?.[0]}
+                  {((profile?.role === 'mentor' ? conn.menteeName : conn.mentorName) || 'U').trim().slice(0, 2).toUpperCase()}
                 </div>
                 <div className="text-left flex-1 min-w-0">
                   <p className={`font-bold text-sm tracking-tight transition-colors truncate ${selectedConn?.id === conn.id ? 'text-text-primary' : 'text-text-secondary'}`}>
@@ -800,8 +800,8 @@ export function MentorshipSpace() {
             {/* Upper Action Command Deck */}
             <header className="py-4 px-8 border-b border-border flex flex-col md:flex-row md:justify-between md:items-center bg-bg-primary/80 backdrop-blur-md sticky top-0 z-10 gap-4">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-primary to-primary-hover flex items-center justify-center text-white font-extrabold text-xl shadow-md shadow-primary/10 shrink-0">
-                  {(profile?.role === 'mentor' ? selectedConn.menteeName : selectedConn.mentorName)?.[0]}
+                <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-primary to-primary-hover flex items-center justify-center text-white font-black text-sm uppercase tracking-wider shadow-md shadow-primary/10 shrink-0">
+                  {((profile?.role === 'mentor' ? selectedConn.menteeName : selectedConn.mentorName) || 'U').trim().slice(0, 2).toUpperCase()}
                 </div>
                 <div className="space-y-1">
                   <h3 className="font-extrabold text-lg text-text-primary tracking-tight leading-none">

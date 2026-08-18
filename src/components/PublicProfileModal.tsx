@@ -258,10 +258,8 @@ export function PublicProfileModal({ isOpen, onClose, profileType, profileData }
                   <div className="md:col-span-1 space-y-6">
                     {/* Mentor Badge & Star rating */}
                     <div className="p-5 bg-card border border-border rounded-xl text-center space-y-4 shadow-xs">
-                      <div className="w-20 h-20 rounded-2xl bg-warning-light text-warning mx-auto flex items-center justify-center font-black text-4xl border border-warning/20 shadow-inner overflow-hidden">
-                        {profileData.image || profileData.photo ? (
-                          <img src={profileData.image || profileData.photo} className="object-cover w-full h-full" alt={displayName} />
-                        ) : displayName[0]}
+                      <div className="w-20 h-20 rounded-2xl bg-warning-light text-warning mx-auto flex items-center justify-center font-black text-2xl border border-warning/20 shadow-inner uppercase tracking-wider">
+                        {displayName.trim().slice(0, 2).toUpperCase() || 'ME'}
                       </div>
 
                       <div className="space-y-1">

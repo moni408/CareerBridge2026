@@ -640,23 +640,38 @@ Return JSON with: matchScore (number 0-100), matchReasons (string[]), missingSki
   }
 }
 
-export async function generateDynamicCareerTaxonomy(targetRole: string, targetIndustry?: string): Promise<any> {
+export async function generateDynamicCareerTaxonomy(targetRole: string, targetDepartmentOrIndustry?: string, userSkills?: any[]): Promise<any> {
   const systemPrompt = "You are a chief tech recruiter and career taxonomy architect. Generate a comprehensive skill taxonomy for any custom role in JSON format.";
-  const userPrompt = `Generate a realistic skills rubric and industry baseline for the role: "${targetRole}" ${targetIndustry ? 'in industry: ' + targetIndustry : ''}.
-Return a JSON object with:
+  const userPrompt = `Generate a realistic skills rubric and radar benchmarks for the role: "${targetRole}" ${targetDepartmentOrIndustry ? 'in field/department: ' + targetDepartmentOrIndustry : ''}.
+Candidate's current skills context: ${JSON.stringify(userSkills || [])}
+
+Return a valid JSON object strictly matching:
 {
-  "role": "${targetRole}",
-  "industry": "${targetIndustry || 'Technology'}",
+  "id": "${targetRole.toLowerCase().replace(/[^a-z0-9]+/g, '-')}",
+  "title": "${targetRole}",
+  "field": "tech" | "non-tech",
+  "fieldCategory": "Software & Data" | "Humanities & Social Sciences" | "Arts & Creative" | "Business & Policy" | "Media & Journalism",
+  "description": string (1-2 sentences on what this role does),
   "requiredSkills": [
-    { "name": string, "category": "Core" | "Frameworks" | "Architecture" | "Tools" | "Soft Skills", "weight": number, "minMastery": number }
+    { "name": string, "category": "technical" | "domain" | "soft", "weight": number (70-95) }
   ],
-  "recommendedCoursework": string[],
-  "benchmarkScore": number
+  "radarCategories": [string, string, string, string, string] (exactly 5 concise category names for a radar chart),
+  "benchmarks": {
+    "cat1": number (70-95),
+    "cat2": number (70-95),
+    "cat3": number (70-95),
+    "cat4": number (70-95),
+    "cat5": number (70-95)
+  },
+  "sampleBridgeProjects": [
+    { "title": string, "description": string, "skillToGain": string, "estimatedHours": string }
+  ]
 }`;
 
   try {
     const rawJson = await generateAIJSON(systemPrompt, userPrompt);
-    return JSON.parse(repairJSON(rawJson));
+    const parsed = JSON.parse(repairJSON(rawJson));
+    return parsed;
   } catch (e) {
     const baseConfig = getRoleConfig(targetRole);
     return baseConfig;

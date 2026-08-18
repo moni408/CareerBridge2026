@@ -583,20 +583,9 @@ export function MentorList({ setView, searchQuery }: { setView: (view: any) => v
                 {/* Header: Avatar, Rating & Rank */}
                 <div className="flex justify-between items-start mb-5">
                   <div className="relative">
-                    {mentor.avatar && !mentor.avatar.includes('unsplash.com/photo-1534528741775-53994a69daeb') ? (
-                      <img 
-                        src={mentor.avatar} 
-                        alt={mentor.name} 
-                        className="w-14 h-14 rounded-2xl object-cover border border-primary/20 shadow-sm"
-                        onError={(e) => {
-                          (e.target as HTMLElement).style.display = 'none';
-                        }}
-                      />
-                    ) : (
-                      <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center text-primary font-bold text-xl border border-primary/20 group-hover:scale-105 transition-transform duration-500 shadow-sm">
-                        {mentor.name?.[0] || 'M'}
-                      </div>
-                    )}
+                    <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center text-primary font-bold text-lg border border-primary/20 group-hover:scale-105 transition-transform duration-500 shadow-sm uppercase tracking-wider">
+                      {(mentor.name || 'Mentor').trim().slice(0, 2).toUpperCase()}
+                    </div>
                     {mentor.verified && (
                       <div className="absolute -bottom-1 -right-1 bg-primary text-white p-0.5 rounded-full ring-2 ring-bg-secondary" title="Verified Mentor">
                         <ShieldCheck className="w-3.5 h-3.5" />

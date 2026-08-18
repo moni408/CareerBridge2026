@@ -629,11 +629,9 @@ CareerBridge Verified Expert Mentor`;
                               }`}>
                                 #{position}
                               </div>
-                              <img 
-                                src={lead.avatar} 
-                                alt={lead.name}
-                                className="w-8 h-8 rounded-full object-cover border border-border shrink-0" 
-                              />
+                              <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 text-primary font-bold text-xs flex items-center justify-center shrink-0 uppercase tracking-wider">
+                                {(lead.name || 'Mentor').trim().slice(0, 2).toUpperCase()}
+                              </div>
                               <div>
                                 <p className="text-text-primary font-bold flex items-center gap-1.5">
                                   {lead.name}
@@ -1237,11 +1235,9 @@ CareerBridge Verified Expert Mentor`;
                         🥈 Rank #2 • Silver Guild
                       </div>
                       <div className="relative mt-2">
-                        <img 
-                          src={realMentors[1].avatar} 
-                          alt={realMentors[1].name} 
-                          className="w-20 h-20 rounded-full object-cover border-4 border-slate-300 shadow-md"
-                        />
+                        <div className="w-20 h-20 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-4 border-slate-300 shadow-md flex items-center justify-center font-black text-2xl uppercase tracking-wider">
+                          {(realMentors[1].name || 'Mentor').trim().slice(0, 2).toUpperCase()}
+                        </div>
                       </div>
                       <div>
                         <h3 className="font-bold text-lg text-text-primary flex items-center justify-center gap-1.5">
@@ -1268,11 +1264,9 @@ CareerBridge Verified Expert Mentor`;
                         🥇 Rank #1 • Guild Champion
                       </div>
                       <div className="relative mt-3">
-                        <img 
-                          src={realMentors[0].avatar} 
-                          alt={realMentors[0].name} 
-                          className="w-24 h-24 rounded-full object-cover border-4 border-amber-500 shadow-lg"
-                        />
+                        <div className="w-24 h-24 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-4 border-amber-500 shadow-lg flex items-center justify-center font-black text-3xl uppercase tracking-wider">
+                          {(realMentors[0].name || 'Mentor').trim().slice(0, 2).toUpperCase()}
+                        </div>
                       </div>
                       <div>
                         <h3 className="font-extrabold text-xl text-text-primary flex items-center justify-center gap-1.5">
@@ -1299,11 +1293,9 @@ CareerBridge Verified Expert Mentor`;
                         🥉 Rank #3 • Bronze Guild
                       </div>
                       <div className="relative mt-2">
-                        <img 
-                          src={realMentors[2].avatar} 
-                          alt={realMentors[2].name} 
-                          className="w-20 h-20 rounded-full object-cover border-4 border-amber-700/60 shadow-md"
-                        />
+                        <div className="w-20 h-20 rounded-full bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border-4 border-amber-700/60 shadow-md flex items-center justify-center font-black text-2xl uppercase tracking-wider">
+                          {(realMentors[2].name || 'Mentor').trim().slice(0, 2).toUpperCase()}
+                        </div>
                       </div>
                       <div>
                         <h3 className="font-bold text-lg text-text-primary flex items-center justify-center gap-1.5">
@@ -1380,11 +1372,9 @@ CareerBridge Verified Expert Mentor`;
                               </td>
                               <td className="py-3.5 px-3">
                                 <div className="flex items-center gap-3">
-                                  <img 
-                                    src={lead.avatar} 
-                                    alt={lead.name}
-                                    className="w-9 h-9 rounded-full object-cover border border-border shrink-0" 
-                                  />
+                                  <div className="w-9 h-9 rounded-full bg-primary/10 border border-primary/20 text-primary font-bold text-xs flex items-center justify-center shrink-0 uppercase tracking-wider">
+                                    {(lead.name || 'Mentor').trim().slice(0, 2).toUpperCase()}
+                                  </div>
                                   <div>
                                     <p className="text-text-primary font-bold flex items-center gap-1.5">
                                       {lead.name}
