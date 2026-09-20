@@ -173,7 +173,6 @@ export function Layout({ children, currentView, setView, searchQuery, setSearchQ
   // Industry-specific navigation lists
   const industryWorkspaceItems = [
     { id: 'industry-dashboard', label: 'Console', icon: LayoutDashboard },
-    { id: 'profile', label: 'My Profile', icon: UserIcon },
     { id: 'industry-talents', label: 'Candidate Pool', icon: Users },
     { id: 'industry-jobs', label: 'Positions Manager', icon: Briefcase },
     { id: 'industry-academic-sessions', label: 'Academic Sessions', icon: GraduationCap }
