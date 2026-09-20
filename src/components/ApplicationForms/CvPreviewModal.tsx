@@ -60,9 +60,12 @@ export function CvPreviewModal({ isOpen, onClose, cvUrl, fileName, studentName }
               )}
               <button
                 onClick={onClose}
-                className="p-1.5 bg-white border border-[#E2E8F0] text-[#64748B] hover:text-[#0F172A] rounded-lg transition-all"
+                className="p-1.5 px-2.5 bg-white hover:bg-red-600 border border-[#E2E8F0] hover:border-red-600 text-[#64748B] hover:text-white rounded-lg transition-all cursor-pointer flex items-center gap-1 shadow-2xs group"
+                title="Close CV Preview (Esc)"
+                aria-label="Close CV Preview"
               >
-                <X className="w-4 h-4" />
+                <X className="w-4 h-4 text-[#64748B] group-hover:text-white transition-colors" />
+                <span className="text-xs font-semibold hidden sm:inline">Close</span>
               </button>
             </div>
           </div>

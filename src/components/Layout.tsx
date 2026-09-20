@@ -1,6 +1,6 @@
 import React from 'react';
 import { 
-  LayoutDashboard, FileUp, Briefcase, Users, Share2, LogOut, 
+  LayoutDashboard, FileUp, Briefcase, Users, LogOut, 
   User as UserIcon, Sparkles, MessageSquare, Bell, Search, 
   ChevronRight, ChevronLeft, ShieldCheck, Target, Calendar, ClipboardCheck, 
   Award, TrendingUp, Settings, Star, Building2, GraduationCap, ChevronDown, FileText,
@@ -165,7 +165,7 @@ export function Layout({ children, currentView, setView, searchQuery, setSearchQ
     { id: 'mentor-workspace', label: 'Workspace', icon: ClipboardCheck },
     { id: 'mentor-sessions', label: 'Sessions', icon: Calendar },
     { id: 'mentor-messaging', label: 'Messaging', icon: MessageSquare },
-    { id: 'mentor-reputation', label: 'Reputation', icon: Award },
+    { id: 'mentor-reputation', label: 'Achievements', icon: Award },
   ];
 
   const mentorNetworkItems: any[] = [];
@@ -261,8 +261,7 @@ export function Layout({ children, currentView, setView, searchQuery, setSearchQ
       {
         title: 'ACCOUNT',
         items: [
-          { id: 'profile', label: 'My Profile', icon: UserIcon },
-          { id: 'collaboration', label: 'Collaboration Hub', icon: Share2 }
+          { id: 'profile', label: 'My Profile', icon: UserIcon }
         ]
       }
     ];

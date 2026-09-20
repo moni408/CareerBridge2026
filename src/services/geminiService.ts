@@ -149,6 +149,62 @@ export function sanitizeTechStack(rawTechStack: any): string[] {
   return cleanList.slice(0, 6);
 }
 
+/**
+ * Normalizes any arbitrary skills representation (object, array of strings, array of groups, comma-delimited string)
+ * into a strongly-typed array of { category: string, items: string[] }.
+ */
+export function normalizeSkills(skills: any): { category: string; items: string[] }[] {
+  if (!skills) return [];
+
+  if (Array.isArray(skills)) {
+    // If it's an array of skill objects with category & items
+    if (skills.length > 0 && typeof skills[0] === 'object' && skills[0] !== null && 'items' in skills[0]) {
+      return skills.map((s: any) => ({
+        category: typeof s.category === 'string' && s.category.trim() ? s.category.trim() : 'Key Skills',
+        items: Array.isArray(s.items)
+          ? s.items.map((i: any) => String(i).trim()).filter(Boolean)
+          : typeof s.items === 'string'
+          ? s.items.split(',').map((i: string) => i.trim()).filter(Boolean)
+          : []
+      })).filter((group: any) => group.items.length > 0);
+    }
+
+    // If it's an array of strings e.g. ["React", "TypeScript", "Node.js"]
+    if (skills.every(s => typeof s === 'string')) {
+      const items = skills.map((s: string) => s.trim()).filter(Boolean);
+      return items.length > 0 ? [{ category: 'Key Technical & Professional Skills', items }] : [];
+    }
+
+    // If it's an array of objects like [{ name: 'React' }, { name: 'Node' }]
+    const items = skills.map((s: any) => typeof s === 'string' ? s.trim() : (s?.name || s?.title || '').trim()).filter(Boolean);
+    return items.length > 0 ? [{ category: 'Key Technical & Professional Skills', items }] : [];
+  }
+
+  // If it's an object mapping category name to skills e.g. { "Languages": ["JS", "Python"], "Tools": ["Git"] }
+  if (typeof skills === 'object' && skills !== null) {
+    const groups: { category: string; items: string[] }[] = [];
+    for (const [category, val] of Object.entries(skills)) {
+      const items = Array.isArray(val)
+        ? val.map((i: any) => String(i).trim()).filter(Boolean)
+        : typeof val === 'string'
+        ? val.split(',').map((i: string) => i.trim()).filter(Boolean)
+        : [];
+      if (items.length > 0) {
+        groups.push({ category, items });
+      }
+    }
+    return groups;
+  }
+
+  // If it's a comma-separated string e.g. "React, Node.js, SQL"
+  if (typeof skills === 'string') {
+    const items = skills.split(',').map(s => s.trim()).filter(Boolean);
+    return items.length > 0 ? [{ category: 'Key Technical & Professional Skills', items }] : [];
+  }
+
+  return [];
+}
+
 export interface SkillScore {
   name: string;
   score: number;
@@ -269,7 +325,7 @@ TASK 1: Extract the FULL structured CV props so NO skills, contact info, experie
   - summary (concise 2-3 sentence executive summary).
   - education: array of { school, degree, year, gpa, coursework }.
   - experience: array of { company, role, duration, description (bullet points), location }.
-  - projects: array of { name, techStack (clean names only), description (bullet points) }.
+  - projects: array of { name, techStack (clean names only), description (bullet points) }. CRITICAL: Extract EVERY project found in the CV without omitting, summarizing, or limiting to top 2-3. If the user has 6-7 projects, include all 6-7 projects with their individual descriptions.
   - skills: array of categorized skills { category: string, items: string[] } (e.g. "Languages", "Frontend & Backend", "Databases & Cloud", "Tools & DevOps", "Soft Skills & Management"). Ensure ALL technical and soft skills from the resume are captured.
   - languages, interests, certifications.
 
@@ -394,7 +450,7 @@ Respond ONLY with valid JSON conforming to this structure:
 
 export async function generateCV(userData: any): Promise<GeneratedCV> {
   const systemPrompt = `You are an expert CV writer. Create a high-impact, professional CV in JSON format.
-Ensure the description for experience and projects is an array of high-impact bullet points. 
+Ensure the description for experience and projects is an array of high-impact bullet points. Include ALL projects provided by the candidate without truncating or removing any.
 Categorize skills logically (e.g., Languages, Frontend, Backend, Tools).
 Ensure Languages, Interests, and Certifications are returned as arrays of strings.`;
 
@@ -409,6 +465,9 @@ ${JSON.stringify(userData)}`;
         ...p,
         techStack: sanitizeTechStack(p.techStack)
       }));
+    }
+    if (parsed) {
+      parsed.skills = normalizeSkills(parsed.skills);
     }
     return parsed;
   } catch (e) {

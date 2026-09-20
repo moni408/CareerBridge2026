@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import jsPDF from 'jspdf';
 import { useAuth } from '../App';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { sendCrossRoleEmailNotification } from '../services/emailService';
@@ -16,7 +18,8 @@ import {
   User as UserIcon, Settings, Star, TrendingUp, Trophy, 
   Clock, ArrowUpRight, Search, Check, X, ShieldAlert, ShieldCheck,
   Loader2, Play, FileText, Send, Paperclip, ChevronRight,
-  ExternalLink, BarChart3, Heart, LogIn, ChevronDown, CheckCircle, Plus, Calendar, Download, Share2, Sparkles, Video
+  ExternalLink, BarChart3, Heart, LogIn, ChevronDown, CheckCircle, Plus, Calendar, Download, Share2, Sparkles, Video,
+  Lock, CheckCircle2, ZoomIn, ZoomOut
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -50,6 +53,10 @@ export function MentorSection() {
 
   // Endorsement Modal states
   const [isEndorsementModalOpen, setIsEndorsementModalOpen] = useState<boolean>(false);
+  const [showCertificateModal, setShowCertificateModal] = useState<boolean>(false);
+  const [certificateZoom, setCertificateZoom] = useState<number>(0.9);
+  const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
+  const [exportSuccess, setExportSuccess] = useState<string | null>(null);
   const [endorsementMenteeId, setEndorsementMenteeId] = useState<string>('');
   const [endorsementSkills, setEndorsementSkills] = useState<string>('');
   const [endorsementProjects, setEndorsementProjects] = useState<string>('');
@@ -275,6 +282,231 @@ export function MentorSection() {
   const isJunior = mentorXp >= LEVELS.JUNIOR.min;
   const isLeader = mentorXp >= LEVELS.LEADER.min;
 
+  // 500 XP Proof of Standing Unlock & Live Platform Metrics
+  const isCertificateUnlocked = mentorXp >= 500;
+  const myRankIndex = realMentors.findIndex(m => m.uid === user?.uid || m.isYou);
+  const myPlatformRank = myRankIndex >= 0 ? myRankIndex + 1 : 1;
+  const studentsMentoredCount = activeConnections.length;
+
+  // Helper to render high-fidelity vector certificate directly in jsPDF
+  const renderVectorCertificate = (pdf: jsPDF, data: {
+    recipientName: string;
+    recipientTitle: string;
+    recipientCompany: string;
+    rank: number;
+    menteesCount: number;
+    xp: number;
+    level: string;
+    credentialId: string;
+    ledgerHash: string;
+    issueDate: string;
+  }) => {
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+
+    // White background
+    pdf.setFillColor(255, 255, 255);
+    pdf.rect(0, 0, pageWidth, pageHeight, 'F');
+
+    // Outer gold double borders
+    pdf.setDrawColor(217, 119, 6);
+    pdf.setLineWidth(1.5);
+    pdf.rect(12, 12, pageWidth - 24, pageHeight - 24, 'S');
+    pdf.setLineWidth(0.5);
+    pdf.rect(14.5, 14.5, pageWidth - 29, pageHeight - 29, 'S');
+
+    // Corner decorative accents
+    pdf.setFillColor(217, 119, 6);
+    pdf.circle(18, 18, 1.5, 'F');
+    pdf.circle(pageWidth - 18, 18, 1.5, 'F');
+    pdf.circle(18, pageHeight - 18, 1.5, 'F');
+    pdf.circle(pageWidth - 18, pageHeight - 18, 1.5, 'F');
+
+    // Top Institution Header
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(10);
+    pdf.setTextColor(180, 83, 9);
+    pdf.text('CAREERBRIDGE GUILD ACCREDITATION', pageWidth / 2, 34, { align: 'center' });
+
+    // Main Certificate Title
+    pdf.setFont('times', 'bold');
+    pdf.setFontSize(22);
+    pdf.setTextColor(15, 23, 42);
+    pdf.text('Certificate of Mentorship Standing', pageWidth / 2, 46, { align: 'center' });
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(9);
+    pdf.setTextColor(100, 116, 139);
+    pdf.text('Institutional Verification of Platform Rank & Graduate Mentoring Record', pageWidth / 2, 53, { align: 'center' });
+
+    // Accent line
+    pdf.setDrawColor(245, 158, 11);
+    pdf.setLineWidth(0.4);
+    pdf.line(40, 58, pageWidth - 40, 58);
+
+    // Certifies statement
+    pdf.setFont('times', 'italic');
+    pdf.setFontSize(11);
+    pdf.setTextColor(71, 85, 105);
+    pdf.text('This official institutional document hereby certifies that', pageWidth / 2, 72, { align: 'center' });
+
+    // Recipient Name
+    pdf.setFont('times', 'bold');
+    pdf.setFontSize(24);
+    pdf.setTextColor(27, 42, 143);
+    pdf.text(data.recipientName, pageWidth / 2, 86, { align: 'center' });
+
+    // Underline
+    const nameWidth = pdf.getTextWidth(data.recipientName);
+    pdf.setDrawColor(27, 42, 143);
+    pdf.setLineWidth(0.5);
+    pdf.line((pageWidth - nameWidth) / 2 - 4, 89, (pageWidth + nameWidth) / 2 + 4, 89);
+
+    // Role & Organization
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(10.5);
+    pdf.setTextColor(51, 65, 85);
+    pdf.text(`${data.recipientTitle} • ${data.recipientCompany}`, pageWidth / 2, 98, { align: 'center' });
+
+    // Highlights Grid
+    const boxY = 110;
+    const boxWidth = 54;
+    const boxHeight = 28;
+    const gap = 8;
+    const startX = (pageWidth - (boxWidth * 3 + gap * 2)) / 2;
+
+    // Box 1: Rank
+    pdf.setFillColor(254, 243, 199);
+    pdf.setDrawColor(245, 158, 11);
+    pdf.roundedRect(startX, boxY, boxWidth, boxHeight, 2, 2, 'FD');
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(8);
+    pdf.setTextColor(180, 83, 9);
+    pdf.text('PLATFORM STANDING', startX + boxWidth / 2, boxY + 7, { align: 'center' });
+    pdf.setFontSize(14);
+    pdf.text(`Rank #${data.rank}`, startX + boxWidth / 2, boxY + 16, { align: 'center' });
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(7.5);
+    pdf.setTextColor(100, 116, 139);
+    pdf.text('CareerBridge Directory', startX + boxWidth / 2, boxY + 23, { align: 'center' });
+
+    // Box 2: Mentoring Impact
+    const box2X = startX + boxWidth + gap;
+    pdf.setFillColor(238, 242, 255);
+    pdf.setDrawColor(99, 102, 241);
+    pdf.roundedRect(box2X, boxY, boxWidth, boxHeight, 2, 2, 'FD');
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(8);
+    pdf.setTextColor(67, 56, 202);
+    pdf.text('MENTORING IMPACT', box2X + boxWidth / 2, boxY + 7, { align: 'center' });
+    pdf.setFontSize(14);
+    pdf.text(`${data.menteesCount}`, box2X + boxWidth / 2, boxY + 16, { align: 'center' });
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(7.5);
+    pdf.setTextColor(100, 116, 139);
+    pdf.text('Active Mentees Guided', box2X + boxWidth / 2, boxY + 23, { align: 'center' });
+
+    // Box 3: Accreditation Tier
+    const box3X = box2X + boxWidth + gap;
+    pdf.setFillColor(236, 253, 245);
+    pdf.setDrawColor(16, 185, 129);
+    pdf.roundedRect(box3X, boxY, boxWidth, boxHeight, 2, 2, 'FD');
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(8);
+    pdf.setTextColor(4, 120, 87);
+    pdf.text('ACCREDITATION TIER', box3X + boxWidth / 2, boxY + 7, { align: 'center' });
+    pdf.setFontSize(14);
+    pdf.text(`${data.xp} XP`, box3X + boxWidth / 2, boxY + 16, { align: 'center' });
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(7.5);
+    pdf.setTextColor(100, 116, 139);
+    pdf.text(data.level, box3X + boxWidth / 2, boxY + 23, { align: 'center' });
+
+    // Formal Statement
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(9.5);
+    pdf.setTextColor(51, 65, 85);
+    const narrative = `Has achieved Senior Mentorship Accreditation under CareerBridge standards, holding active rank #${data.rank} in the platform directory with ${data.menteesCount} successfully guided mentees. This document serves as official verifiable proof of leadership, candidate task evaluation, and professional mentorship impact.`;
+    const splitText = pdf.splitTextToSize(narrative, pageWidth - 48);
+    pdf.text(splitText, pageWidth / 2, 150, { align: 'center' });
+
+    // Golden Official Seal
+    pdf.setFillColor(245, 158, 11);
+    pdf.circle(pageWidth / 2, 184, 13, 'F');
+    pdf.setFillColor(254, 243, 199);
+    pdf.circle(pageWidth / 2, 184, 11, 'F');
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(7);
+    pdf.setTextColor(180, 83, 9);
+    pdf.text('OFFICIAL', pageWidth / 2, 182.5, { align: 'center' });
+    pdf.text('SEAL', pageWidth / 2, 187, { align: 'center' });
+
+    // Verification & Signatures
+    pdf.setDrawColor(245, 158, 11);
+    pdf.setLineWidth(0.4);
+    pdf.line(26, 206, pageWidth - 26, 206);
+
+    pdf.setFont('courier', 'bold');
+    pdf.setFontSize(8);
+    pdf.setTextColor(30, 41, 59);
+    pdf.text(`Credential ID: ${data.credentialId}`, 24, 216);
+    pdf.text(`Ledger Hash:   ${data.ledgerHash}`, 24, 222);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(`Issued On:     ${data.issueDate}`, 24, 228);
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(9);
+    pdf.setTextColor(5, 150, 105);
+    pdf.text('✓ VERIFIED CREDENTIAL', pageWidth - 24, 216, { align: 'right' });
+    pdf.setFont('times', 'italic');
+    pdf.setFontSize(9);
+    pdf.setTextColor(71, 85, 105);
+    pdf.text('CareerBridge Academic & Guild Council', pageWidth - 24, 222, { align: 'right' });
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(7.5);
+    pdf.setTextColor(148, 163, 184);
+    pdf.text('Autonomous Ledger Verification System', pageWidth - 24, 228, { align: 'right' });
+  };
+
+  const handleDownloadPDF = async () => {
+    setIsExportingPdf(true);
+    setExportSuccess(null);
+
+    const certData = {
+      recipientName: profile?.displayName || profile?.name || 'Verified Mentor',
+      recipientTitle: profile?.jobTitle || profile?.role || 'Senior Industry Mentor',
+      recipientCompany: profile?.company || 'CareerBridge Industry Guild',
+      rank: myPlatformRank,
+      menteesCount: studentsMentoredCount,
+      xp: mentorXp,
+      level: levelInfo.level,
+      credentialId: `CB-MTR-${(user?.uid || '8942').slice(0, 8).toUpperCase()}`,
+      ledgerHash: `SHA256:CB-${(user?.uid || '8942').slice(0, 6).toUpperCase()}-${(mentorXp * 11 + 777).toString(16).toUpperCase()}`,
+      issueDate: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+    };
+
+    const cleanName = certData.recipientName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fileName = `CareerBridge-Certificate-${cleanName}-Rank${myPlatformRank}.pdf`;
+
+    try {
+      // Direct high-resolution vector PDF generation (100% resilient, no DOM/CSS rules reading)
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+      });
+      renderVectorCertificate(pdf, certData);
+      pdf.save(fileName);
+      setExportSuccess('Certificate downloaded successfully as official PDF! You can now print or save it.');
+      setTimeout(() => setExportSuccess(null), 6000);
+    } catch (err: any) {
+      console.error('Vector PDF export failed:', err);
+      alert('Could not export PDF. Please try again.');
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
   // Helper to compute average skills score for a graduate
   const getCompetencyScore = (menteeId: string) => {
     const graduate = allGraduates.find(g => g.id === menteeId);
@@ -413,6 +645,34 @@ CareerBridge Verified Expert Mentor`;
           });
         }
 
+        // If student has savedCV, inject the verified mentorship experience into their CV
+        let updatedSavedCV = studentData.savedCV ? { ...studentData.savedCV } : null;
+        if (updatedSavedCV) {
+          const mentorshipExp = {
+            company: 'CareerBridge Mentorship Program',
+            role: 'Verified Mentorship Graduate (Mentee)',
+            location: 'Remote / Global',
+            duration: 'Completed',
+            isEndorsedExperience: true,
+            mentorName: mentorDisplayName,
+            description: [
+              `Successfully completed formal CareerBridge Mentorship Program under the 1:1 guidance of ${mentorDisplayName} (Senior Industry Mentor).`,
+              parsedSkills.length > 0 ? `Verified Competencies & Applied Practices: ${parsedSkills.join(', ')}.` : '',
+              endorsementProjects.trim() ? `Capstone Project Milestone: ${endorsementProjects.trim()} — reviewed, validated, and accredited.` : '',
+              `Awarded Official CareerBridge Verified Mentorship Endorsement Letter & Graduate Standing.`
+            ].filter(Boolean)
+          };
+          const existingExp = Array.isArray(updatedSavedCV.experience) ? updatedSavedCV.experience : [];
+          const filteredExp = existingExp.filter((e: any) => e.company !== 'CareerBridge Mentorship Program');
+          updatedSavedCV.experience = [mentorshipExp, ...filteredExp];
+
+          const existingCerts = Array.isArray(updatedSavedCV.certifications) ? updatedSavedCV.certifications : [];
+          const endorsementCertTitle = `CareerBridge Verified Mentorship Endorsement — Endorsed by ${mentorDisplayName}`;
+          if (!existingCerts.includes(endorsementCertTitle)) {
+            updatedSavedCV.certifications = [endorsementCertTitle, ...existingCerts];
+          }
+        }
+
         // Write updates to Firestore
         await updateDoc(studentDocRef, {
           skills: mergedSkills,
@@ -421,6 +681,7 @@ CareerBridge Verified Expert Mentor`;
           meanSkillScore: newReadiness,
           isEndorsed: true,
           endorsementMentorName: mentorDisplayName,
+          ...(updatedSavedCV ? { savedCV: updatedSavedCV } : {}),
           updatedAt: new Date().toISOString()
         });
       }
@@ -1027,39 +1288,91 @@ CareerBridge Verified Expert Mentor`;
               {/* TWO SECIONS WITH CERTIFICATES AND ENDORSEMENT LETTERS */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 
-                {/* PDF certificate DOWNLOAD */}
+                {/* OFFICIAL PROOF OF STANDING & DIPLOMA */}
                 <div className="p-6 bg-card border border-border rounded-2xl space-y-4">
-                  <h4 className="text-sm font-bold tracking-tight text-text-primary border-b border-border pb-3 flex items-center gap-2">
-                    <Award className="w-4 h-4 text-[#534AB7]" /> Platform Certification System
-                  </h4>
+                  <div className="flex items-center justify-between border-b border-border pb-3">
+                    <h4 className="text-sm font-bold tracking-tight text-text-primary flex items-center gap-2">
+                      <Award className="w-4 h-4 text-primary" /> Official Proof of Standing & Accreditation
+                    </h4>
+                    <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                      isCertificateUnlocked 
+                        ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' 
+                        : 'bg-amber-500/10 text-amber-600 border-amber-500/20'
+                    }`}>
+                      {isCertificateUnlocked ? '✨ Unlocked (500+ XP)' : `Locked • ${mentorXp}/500 XP`}
+                    </span>
+                  </div>
+
                   <p className="text-xs text-text-secondary leading-relaxed">
-                    Once you unlock **Expert mentor** status (1,200 XP), you can download the verified PDF diploma indicating your mentorship accreditation.
+                    Unlocked at **500 XP (Senior Guide)**. Generates an institutional proof of standing certifying that you are **Rank #{myPlatformRank}** with **{studentsMentoredCount} successfully mentored {studentsMentoredCount === 1 ? 'student' : 'students'}** on CareerBridge.
                   </p>
 
-                  <div className={`p-4 rounded-xl border border-dashed flex flex-col items-center justify-center space-y-3 ${
-                    isExpert ? 'bg-primary/5 border-primary/20' : 'bg-bg-secondary/40 border-border opacity-60'
+                  <div className={`p-4 rounded-xl border flex flex-col items-center justify-center space-y-3 text-center transition-all ${
+                    isCertificateUnlocked 
+                      ? 'bg-gradient-to-b from-primary/5 to-transparent border-primary/20' 
+                      : 'bg-bg-secondary/40 border-dashed border-border opacity-70'
                   }`}>
-                    <FileText className="w-10 h-10 text-primary-text" />
-                    <div>
-                      <p className="text-xs font-bold text-text-primary">Accredited Mentor PDF Diploma</p>
-                      <p className="text-[10px] text-text-muted">Digitally counter-signed by CareerBridge Guild Panel</p>
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-xs ${
+                      isCertificateUnlocked ? 'bg-primary text-white' : 'bg-bg-secondary text-text-muted border border-border'
+                    }`}>
+                      {isCertificateUnlocked ? <Award className="w-6 h-6" /> : <Lock className="w-6 h-6" />}
                     </div>
 
-                    <button
-                      disabled={!isExpert}
-                      onClick={() => {
-                        const link = document.createElement('a');
-                        link.href = '#';
-                        link.onclick = (e) => {
-                          e.preventDefault();
-                          alert('Mentor Accreditation Diploma downloaded! File type: PDF-Signed. Document Hash: sha256_b486c90');
-                        };
-                        link.click();
-                      }}
-                      className="inline-flex items-center gap-1 px-4 py-1.5 bg-primary text-white text-[10px] font-bold rounded-lg hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                    >
-                      <Download className="w-3.5 h-3.5" /> Download Verified PDF Certificate
-                    </button>
+                    <div>
+                      <p className="text-xs font-bold text-text-primary">
+                        Rank #{myPlatformRank} • Mentorship Accreditation Certificate
+                      </p>
+                      <p className="text-[10px] text-text-muted mt-0.5">
+                        {studentsMentoredCount} students successfully guided • Digitally authenticated on CareerBridge ledger
+                      </p>
+                    </div>
+
+                    {isCertificateUnlocked ? (
+                      <div className="flex flex-wrap gap-2 justify-center pt-1">
+                        <button
+                          id="btn-view-certificate"
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setShowCertificateModal(true);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary text-white text-xs font-bold rounded-xl hover:bg-primary-hover shadow-xs transition-all cursor-pointer active:scale-95"
+                        >
+                          <FileText className="w-3.5 h-3.5" /> View Proof Document
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isExportingPdf}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setShowCertificateModal(true);
+                            setTimeout(() => handleDownloadPDF(), 350);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer active:scale-95 disabled:opacity-60"
+                        >
+                          {isExportingPdf ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Download className="w-3.5 h-3.5" />
+                          )}
+                          Download PDF
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="w-full max-w-xs space-y-1.5 pt-1">
+                        <div className="w-full bg-bg-secondary rounded-full h-2 overflow-hidden border border-border">
+                          <div 
+                            className="bg-primary h-full transition-all duration-300"
+                            style={{ width: `${Math.min(100, Math.round((mentorXp / 500) * 100))}%` }}
+                          />
+                        </div>
+                        <p className="text-[10px] text-text-muted">
+                          Reach 500 XP to unlock ({Math.max(0, 500 - mentorXp)} XP needed)
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1847,6 +2160,237 @@ CareerBridge Verified Expert Mentor`;
         profileType={publicProfileType} 
         profileData={publicProfileData} 
       />
+
+      {/* OFFICIAL CERTIFICATE OF MENTORSHIP STANDING MODAL */}
+      {showCertificateModal && typeof document !== 'undefined' && createPortal(
+        <div
+          id="certificate-modal-overlay"
+          onClick={() => setShowCertificateModal(false)}
+          className="fixed inset-0 z-[99999] bg-black/85 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-hidden"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-3xl max-h-[88vh] bg-card border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col relative text-left"
+          >
+            {/* Modal Top Bar - Sticky & Fully Visible at top */}
+            <div className="shrink-0 flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-border bg-card shadow-xs z-30">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
+                  <Award className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-bold text-text-primary leading-tight truncate">Official Proof of Standing</h3>
+                  <p className="text-[10px] text-text-muted truncate">Rank #{myPlatformRank} • {studentsMentoredCount} Mentees Guided</p>
+                </div>
+              </div>
+
+              {/* Upper Action Controls: Zoom + Download PDF + Print + Close */}
+              <div className="flex items-center gap-2 shrink-0">
+                {/* Zoom Controls */}
+                <div className="hidden sm:flex items-center bg-bg-secondary rounded-lg border border-border p-0.5 shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCertificateZoom(prev => Math.max(0.6, Number((prev - 0.1).toFixed(2))));
+                    }}
+                    className="p-1.5 text-text-muted hover:text-text-primary hover:bg-card rounded transition-all cursor-pointer"
+                    title="Zoom Out (-10%)"
+                  >
+                    <ZoomOut className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCertificateZoom(0.85);
+                    }}
+                    className="px-2 py-0.5 text-[11px] font-mono font-bold text-text-secondary hover:text-text-primary transition-all cursor-pointer select-none"
+                    title="Reset Zoom to 85%"
+                  >
+                    {Math.round(certificateZoom * 100)}%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCertificateZoom(prev => Math.min(1.4, Number((prev + 0.1).toFixed(2))));
+                    }}
+                    className="p-1.5 text-text-muted hover:text-text-primary hover:bg-card rounded transition-all cursor-pointer"
+                    title="Zoom In (+10%)"
+                  >
+                    <ZoomIn className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* Primary Action: Direct Download PDF */}
+                <button
+                  type="button"
+                  disabled={isExportingPdf}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDownloadPDF();
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition-all cursor-pointer shrink-0 active:scale-95 disabled:opacity-60"
+                  title="Download official PDF file directly to your device"
+                >
+                  {isExportingPdf ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Generating PDF...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Download PDF</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Close button */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowCertificateModal(false);
+                  }}
+                  className="p-1.5 text-text-muted hover:text-text-primary hover:bg-bg-secondary rounded-lg border border-border transition-all cursor-pointer shrink-0 active:scale-95"
+                  title="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Notification Banner when PDF is exported */}
+            {exportSuccess && (
+              <div className="px-4 py-2 bg-emerald-500/10 border-b border-emerald-500/20 text-emerald-800 dark:text-emerald-300 text-xs font-semibold flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{exportSuccess}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setExportSuccess(null)}
+                  className="p-0.5 text-emerald-600 hover:text-emerald-800 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            {/* Printable Certificate Body - Scrollable Container with Zoom */}
+            <div className="flex-1 overflow-y-auto overflow-x-auto p-4 sm:p-6 bg-slate-100/70 dark:bg-slate-950/70 flex justify-center items-start">
+              <div 
+                className="w-full transition-transform duration-150"
+                style={{ transform: `scale(${certificateZoom})`, transformOrigin: 'top center' }}
+              >
+                <div 
+                  id="mentor-certificate-render-target"
+                  className="print-content p-6 sm:p-8 bg-white text-slate-900 relative overflow-hidden rounded-xl border border-slate-200 shadow-md"
+                >
+                  {/* Certificate Decorative Border */}
+                  <div className="border-4 border-double border-amber-600/40 rounded-xl p-5 sm:p-7 relative bg-gradient-to-b from-amber-500/[0.02] to-transparent">
+                    
+                    {/* Top Seal / Emblem */}
+                    <div className="flex flex-col items-center text-center space-y-1.5 pb-5 border-b border-amber-500/20">
+                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-600 to-amber-400 p-0.5 shadow-md flex items-center justify-center">
+                        <div className="w-full h-full bg-white rounded-[14px] flex items-center justify-center">
+                          <Trophy className="w-6 h-6 text-amber-500" />
+                        </div>
+                      </div>
+                      <span className="text-[9px] font-mono font-black tracking-[0.25em] text-amber-600 uppercase">
+                        CAREERBRIDGE GUILD ACCREDITATION
+                      </span>
+                      <h2 className="text-lg sm:text-xl font-black tracking-tight text-slate-900 uppercase font-serif">
+                        Certificate of Mentorship Standing
+                      </h2>
+                      <p className="text-[10px] text-slate-500 max-w-md">
+                        Institutional Verification of Platform Rank & Graduate Mentoring Record
+                      </p>
+                    </div>
+
+                    {/* Certifies Recipient */}
+                    <div className="py-5 text-center space-y-2">
+                      <p className="text-[11px] font-serif italic text-slate-500">
+                        This official institutional document hereby certifies that
+                      </p>
+                      <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-primary font-serif">
+                        {profile?.displayName || profile?.name || 'Verified Mentor'}
+                      </h1>
+                      <p className="text-xs font-medium text-slate-600">
+                        {profile?.jobTitle || profile?.role || 'Senior Industry Mentor'} • {profile?.company || 'CareerBridge Industry Guild'}
+                      </p>
+                    </div>
+
+                    {/* Proof Highlights Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 my-3">
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-center space-y-0.5">
+                        <p className="text-[9px] font-bold text-amber-700 uppercase tracking-wider">Platform Standing</p>
+                        <p className="text-lg sm:text-xl font-black text-amber-600 font-mono">
+                          Rank #{myPlatformRank}
+                        </p>
+                        <p className="text-[8px] text-slate-500">CareerBridge Platform</p>
+                      </div>
+
+                      <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-center space-y-0.5">
+                        <p className="text-[9px] font-bold text-blue-700 uppercase tracking-wider">Mentoring Impact</p>
+                        <p className="text-lg sm:text-xl font-black text-primary font-mono">
+                          {studentsMentoredCount}
+                        </p>
+                        <p className="text-[8px] text-slate-500">
+                          {studentsMentoredCount === 1 ? 'Student Successfully Mentoring' : 'Students Successfully Mentoring'}
+                        </p>
+                      </div>
+
+                      <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-center space-y-0.5">
+                        <p className="text-[9px] font-bold text-indigo-700 uppercase tracking-wider">Accreditation Tier</p>
+                        <p className="text-lg sm:text-xl font-black text-indigo-600 font-mono">
+                          {mentorXp} XP
+                        </p>
+                        <p className="text-[8px] text-slate-500">{levelInfo.level}</p>
+                      </div>
+                    </div>
+
+                    {/* Formal Certification Statement */}
+                    <p className="text-[11px] text-slate-600 text-center max-w-lg mx-auto leading-relaxed my-3">
+                      Has achieved Senior Mentorship Accreditation under CareerBridge standards, holding active rank #{myPlatformRank} in the platform directory with {studentsMentoredCount} successfully mentored {studentsMentoredCount === 1 ? 'student' : 'students'}. This document serves as verifiable proof of leadership, candidate task evaluation, and professional mentorship impact.
+                    </p>
+
+                    {/* Footer Details & Verification Signatures */}
+                    <div className="pt-4 border-t border-amber-500/20 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+                      <div className="space-y-0.5 text-center sm:text-left">
+                        <p className="text-[9px] font-mono">
+                          <strong className="text-slate-700">Credential ID:</strong> CB-MTR-{(user?.uid || '8942').slice(0, 8).toUpperCase()}
+                        </p>
+                        <p className="text-[9px] font-mono">
+                          <strong className="text-slate-700">Ledger Hash:</strong> SHA256:CB-{(user?.uid || '8942').slice(0, 6).toUpperCase()}-{(mentorXp * 11 + 777).toString(16).toUpperCase()}
+                        </p>
+                        <p className="text-[9px]">
+                          <strong className="text-slate-700">Issued On:</strong> {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-col items-center sm:items-end space-y-0.5 text-center sm:text-right">
+                        <div className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                          <CheckCircle2 className="w-2.5 h-2.5" /> VERIFIED CREDENTIAL
+                        </div>
+                        <p className="text-[9px] font-serif italic text-slate-600">
+                          CareerBridge Academic & Guild Council
+                        </p>
+                        <p className="text-[8px] text-slate-400">Autonomous Ledger Verification</p>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>,
+        document.body
+      )}
 
     </div>
   );

@@ -2662,9 +2662,14 @@ function ProfilePreviewModal({ profile, notificationId, onClose, onUpdate }: Pro
                         </span>
                       </div>
                       <div className="p-2.5 bg-slate-50/60 rounded-xl border border-border">
-                        <span className="text-[8px] text-text-muted uppercase font-mono tracking-wider block font-bold">Hourly rate compensation</span>
-                        <span className="text-xs font-semibold text-emerald-600 mt-0.5 block">
-                          ${applicationData?.roleSpecific?.hourlyRate || mergedProfile.hourlyRate || '50'} / hour
+                        <span className="text-[8px] text-text-muted uppercase font-mono tracking-wider block font-bold">Employment Verification</span>
+                        <span className="text-xs font-semibold text-blue-600 mt-0.5 block flex items-center gap-1">
+                          <ShieldCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                          {mergedProfile.verificationMethod === 'employment_document'
+                            ? 'Proof Document'
+                            : mergedProfile.workEmail || mergedProfile.corporateEmail
+                            ? 'Corporate Email'
+                            : 'Standard Submission'}
                         </span>
                       </div>
                       <div className="p-2.5 bg-slate-50/60 rounded-xl border border-border">
@@ -2678,6 +2683,57 @@ function ProfilePreviewModal({ profile, notificationId, onClose, onUpdate }: Pro
                         </span>
                       </div>
                     </div>
+
+                    {/* Employment Verification Dossier */}
+                    {(mergedProfile.verificationMethod || mergedProfile.workEmail || mergedProfile.corporateEmail || mergedProfile.employmentDocumentUrl) && (
+                      <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100/80 space-y-2 text-left">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9px] text-blue-800 uppercase font-mono tracking-wider font-bold flex items-center gap-1.5">
+                            <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                            Authenticity & Employment Proof
+                          </span>
+                          <span className="text-[9px] font-semibold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                            Admin Audit
+                          </span>
+                        </div>
+                        
+                        {mergedProfile.verificationMethod === 'corporate_email' || mergedProfile.workEmail || mergedProfile.corporateEmail ? (
+                          <div className="bg-white p-2.5 rounded-lg border border-blue-100 space-y-1">
+                            <span className="text-[8px] text-text-muted uppercase font-mono block font-bold">Corporate Work Email</span>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-bold text-slate-800 font-mono truncate">
+                                {mergedProfile.workEmail || mergedProfile.corporateEmail}
+                              </span>
+                              <span className="text-[9px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 font-semibold shrink-0">
+                                Domain Authenticated
+                              </span>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {mergedProfile.verificationMethod === 'employment_document' || mergedProfile.employmentDocumentUrl ? (
+                          <div className="bg-white p-2.5 rounded-lg border border-blue-100 space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[8px] text-text-muted uppercase font-mono block font-bold">Employment Document Proof</span>
+                              <span className="text-[9px] text-blue-600 font-medium">
+                                {mergedProfile.employmentDocFileName || 'Document Attached'}
+                              </span>
+                            </div>
+                            {mergedProfile.employmentDocumentUrl && (
+                              <a 
+                                href={mergedProfile.employmentDocumentUrl} 
+                                target="_blank" 
+                                rel="noreferrer"
+                                download={mergedProfile.employmentDocFileName || "employment_proof"}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition-colors"
+                              >
+                                <FileText className="w-3.5 h-3.5" /> Inspect Verification Document
+                              </a>
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
 
                     {/* Bio Approach */}
                     <div className="space-y-1">

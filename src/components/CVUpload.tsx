@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../App';
-import { analyzeCV, generateCV, GeneratedCV, sanitizeTechStack } from '../services/geminiService';
+import { analyzeCV, generateCV, GeneratedCV, sanitizeTechStack, normalizeSkills } from '../services/geminiService';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import { 
   Upload, 
   FileText, 
@@ -37,7 +37,14 @@ import {
   ZoomOut,
   RotateCw,
   Menu,
-  PenTool
+  PenTool,
+  Maximize2,
+  Minimize2,
+  Sun,
+  Moon,
+  Type,
+  ChevronDown,
+  BookOpen
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import mammoth from 'mammoth';
@@ -67,11 +74,90 @@ export function CVUpload({ setView, onComplete }: { setView: (view: any) => void
   const [generatedCV, setGeneratedCV] = useState<GeneratedCV | null>(null);
   const [cvGeneratedInModalSuccess, setCvGeneratedInModalSuccess] = useState(false);
   const [showViewCV, setShowViewCV] = useState(false);
-  const [zoomScale, setZoomScale] = useState(1.0);
+  const [zoomScale, setZoomScale] = useState(0.8);
+  const [paperTheme, setPaperTheme] = useState<'light' | 'sepia' | 'dark'>('light');
+  const [fontComfortMode, setFontComfortMode] = useState<'comfortable' | 'standard'>('comfortable');
+  const [isZoomDropdownOpen, setIsZoomDropdownOpen] = useState(false);
   const [downloadingPDF, setDownloadingPDF] = useState(false);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [isAddSkillModalOpen, setIsAddSkillModalOpen] = useState(false);
   const [skillAddedToast, setSkillAddedToast] = useState<string | null>(null);
+  const viewerContainerRef = useRef<HTMLDivElement>(null);
+
+  // Zoom handlers
+  const handleZoomIn = () => setZoomScale(prev => Math.min(2.0, +(prev + 0.1).toFixed(2)));
+  const handleZoomOut = () => setZoomScale(prev => Math.max(0.6, +(prev - 0.1).toFixed(2)));
+  const handleResetZoom = () => setZoomScale(0.8);
+
+  const handleFitWidth = () => {
+    if (viewerContainerRef.current) {
+      const containerWidth = viewerContainerRef.current.clientWidth;
+      const padding = window.innerWidth < 640 ? 24 : 80;
+      const availableWidth = containerWidth - padding;
+      const docWidth = 850;
+      const calculatedScale = Math.min(1.85, Math.max(0.65, +(availableWidth / docWidth).toFixed(2)));
+      setZoomScale(calculatedScale);
+    } else {
+      setZoomScale(1.25);
+    }
+  };
+
+  const handleFitPage = () => {
+    if (viewerContainerRef.current) {
+      const containerHeight = viewerContainerRef.current.clientHeight;
+      const padding = 100;
+      const availableHeight = containerHeight - padding;
+      const docHeight = 1100;
+      const calculatedScale = Math.min(1.5, Math.max(0.55, +(availableHeight / docHeight).toFixed(2)));
+      setZoomScale(calculatedScale);
+    } else {
+      setZoomScale(0.85);
+    }
+  };
+
+  // Set default 80% scale whenever CV is opened
+  useEffect(() => {
+    if (showViewCV) {
+      setZoomScale(0.8);
+    }
+  }, [showViewCV]);
+
+  // Keyboard navigation & zoom shortcuts inside CV preview
+  useEffect(() => {
+    if (!showViewCV) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowViewCV(false);
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+')) {
+        e.preventDefault();
+        setZoomScale(prev => Math.min(2.0, +(prev + 0.1).toFixed(2)));
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === '-' || e.key === '_')) {
+        e.preventDefault();
+        setZoomScale(prev => Math.max(0.6, +(prev - 0.1).toFixed(2)));
+      } else if ((e.ctrlKey || e.metaKey) && e.key === '0') {
+        e.preventDefault();
+        setZoomScale(0.8);
+      } else if (!e.ctrlKey && !e.metaKey && (e.key === 'w' || e.key === 'W')) {
+        handleFitWidth();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showViewCV]);
+
+  const sanitizeCVObj = (cv: any): GeneratedCV => {
+    if (!cv) return cv;
+    return {
+      ...cv,
+      skills: normalizeSkills(cv.skills),
+      projects: Array.isArray(cv.projects)
+        ? cv.projects.map((p: any) => ({
+            ...p,
+            techStack: sanitizeTechStack(p.techStack)
+          }))
+        : []
+    };
+  };
 
   const handleSkillAddedInCVUpload = (newSkillObj?: any) => {
     const currentUserId = user?.uid || 'guest';
@@ -79,7 +165,7 @@ export function CVUpload({ setView, onComplete }: { setView: (view: any) => void
     if (localCVRaw) {
       try {
         const parsed = JSON.parse(localCVRaw);
-        setGeneratedCV(parsed);
+        setGeneratedCV(sanitizeCVObj(parsed));
       } catch (e) {
         /* ignore */
       }
@@ -88,21 +174,26 @@ export function CVUpload({ setView, onComplete }: { setView: (view: any) => void
     setSkillAddedToast(`"${skillNameAdded}" added & verified! Your CV, Skill Audit, and Career Readiness score have been recalculated.`);
   };
 
+  const [endorsements, setEndorsements] = useState<any[]>([]);
+
+  // Fetch verified endorsements for student
+  useEffect(() => {
+    if (!user) return;
+    const q = query(
+      collection(db, 'endorsements'),
+      where('menteeId', '==', user.uid)
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setEndorsements(list);
+    }, (err) => {
+      console.warn("Notice reading endorsements for CV:", err);
+    });
+    return () => unsubscribe();
+  }, [user]);
+
   // Hydrate saved CV from profile or localStorage
   useEffect(() => {
-    const sanitizeCVObj = (cv: GeneratedCV): GeneratedCV => {
-      if (!cv) return cv;
-      return {
-        ...cv,
-        projects: Array.isArray(cv.projects)
-          ? cv.projects.map(p => ({
-              ...p,
-              techStack: sanitizeTechStack(p.techStack)
-            }))
-          : []
-      };
-    };
-
     if (profile?.savedCV) {
       setGeneratedCV(sanitizeCVObj(profile.savedCV));
     } else {
@@ -119,6 +210,69 @@ export function CVUpload({ setView, onComplete }: { setView: (view: any) => void
       }
     }
   }, [profile?.savedCV, user?.uid]);
+
+  // Merge verified mentorship endorsement into generatedCV experience & certifications
+  useEffect(() => {
+    const activeEndorsement = (endorsements && endorsements.length > 0)
+      ? endorsements[0]
+      : (profile?.isEndorsed || profile?.endorsementMentorName)
+      ? {
+          mentorName: profile.endorsementMentorName || 'Senior Mentor',
+          skillsTaught: (profile.skills || []).slice(0, 4).map((s: any) => typeof s === 'string' ? s : s?.name || ''),
+          projectsCompleted: (profile.projects && profile.projects[0]?.name) || 'Mentorship Milestone',
+        }
+      : null;
+
+    if (!activeEndorsement) return;
+
+    setGeneratedCV(prev => {
+      if (!prev) return prev;
+      const mentorName = activeEndorsement.mentorName || profile?.endorsementMentorName || 'Industry Mentor';
+      const skills = Array.isArray(activeEndorsement.skillsTaught) ? activeEndorsement.skillsTaught.filter(Boolean) : [];
+      const project = activeEndorsement.projectsCompleted || '';
+
+      const mentorshipEntry = {
+        company: 'CareerBridge Mentorship Program',
+        role: 'Verified Mentorship Graduate (Mentee)',
+        location: 'Remote / Global',
+        duration: 'Completed',
+        isEndorsedExperience: true,
+        mentorName: mentorName,
+        description: [
+          `Successfully completed formal CareerBridge Mentorship Program under the direct 1:1 guidance of ${mentorName} (Senior Industry Mentor).`,
+          skills.length > 0 ? `Verified Competencies & Applied Practices: ${skills.join(', ')}.` : '',
+          project ? `Capstone Project Milestone: ${project} — reviewed, validated, and accredited.` : '',
+          `Awarded Official CareerBridge Verified Mentorship Endorsement Letter & Competency Standing.`
+        ].filter(Boolean)
+      };
+
+      const existingExperiences = Array.isArray(prev.experience) ? prev.experience : [];
+      const hasMentorship = existingExperiences.some((e: any) => 
+        e.company === 'CareerBridge Mentorship Program' || e.isEndorsedExperience
+      );
+
+      const updatedExp = hasMentorship 
+        ? existingExperiences.map((e: any) => (e.company === 'CareerBridge Mentorship Program' || e.isEndorsedExperience) ? mentorshipEntry : e)
+        : [mentorshipEntry, ...existingExperiences];
+
+      const existingCerts = Array.isArray(prev.certifications) ? prev.certifications : [];
+      const certTitle = `CareerBridge Verified Mentorship Endorsement — Endorsed by ${mentorName}`;
+      const updatedCerts = existingCerts.includes(certTitle) ? existingCerts : [certTitle, ...existingCerts];
+
+      const updatedCV = {
+        ...prev,
+        experience: updatedExp,
+        certifications: updatedCerts
+      };
+
+      try {
+        localStorage.setItem(`saved_cv_${user?.uid || 'guest'}`, JSON.stringify(updatedCV));
+      } catch (e) {
+        /* ignore */
+      }
+      return updatedCV;
+    });
+  }, [endorsements, profile?.isEndorsed, profile?.endorsementMentorName, user?.uid]);
 
   // Keep builderFormData & generatedCV synchronized when profile updates
   useEffect(() => {
@@ -138,7 +292,8 @@ export function CVUpload({ setView, onComplete }: { setView: (view: any) => void
         const activeSkillNames = profile.skills.map((s: any) => typeof s === 'string' ? s : s?.name || '');
         setGeneratedCV(prev => {
           if (!prev) return prev;
-          const existingSkillsFlat = prev.skills?.flatMap(s => typeof s === 'string' ? [s] : Array.isArray(s?.items) ? s.items : []) || [];
+          const normalizedSkills = normalizeSkills(prev.skills);
+          const existingSkillsFlat = normalizedSkills.flatMap(s => typeof s === 'string' ? [s] : Array.isArray(s?.items) ? s.items : []);
           const hasNewSkill = activeSkillNames.some(s => Boolean(s) && !existingSkillsFlat.includes(s));
           if (hasNewSkill) {
             const updated = {
@@ -207,9 +362,13 @@ export function CVUpload({ setView, onComplete }: { setView: (view: any) => void
       // Sync generated skills into user profile if authenticated
       if (user) {
         const profileRef = doc(db, 'users', user.uid);
-        const extractedSkillNames = cv.skills?.flatMap(s => typeof s === 'string' ? [s] : Array.isArray(s?.items) ? s.items : []) || [];
+        const normalizedSkills = normalizeSkills(cv.skills);
+        const extractedSkillNames = normalizedSkills.flatMap(s => typeof s === 'string' ? [s] : Array.isArray(s?.items) ? s.items : []);
         const payload: Record<string, any> = {
-          savedCV: cv,
+          savedCV: {
+            ...cv,
+            skills: normalizedSkills
+          },
           skills: extractedSkillNames.map(name => ({ name, level: 'Intermediate' })),
           profileAnalyzed: true,
           updatedAt: new Date().toISOString()
@@ -590,6 +749,16 @@ export function CVUpload({ setView, onComplete }: { setView: (view: any) => void
   };
 
   const historyEvents = getHistoryEvents();
+
+  const isComfort = fontComfortMode === 'comfortable';
+  const cvTextBody = isComfort ? 'text-[13px] sm:text-[13.5px] leading-relaxed' : 'text-xs leading-relaxed';
+  const cvTextSub = isComfort ? 'text-xs' : 'text-[11px]';
+  const cvTitle = isComfort ? 'text-sm font-bold' : 'text-xs font-bold';
+  const cvHeadingColor = paperTheme === 'dark' ? 'text-purple-300' : 'text-[#5b21b6]';
+  const cvHeaderBorder = paperTheme === 'dark' ? 'border-slate-700' : 'border-slate-800';
+  const cvTextMuted = paperTheme === 'dark' ? 'text-slate-300' : 'text-slate-700';
+  const cvTextPrimary = paperTheme === 'dark' ? 'text-slate-100' : 'text-slate-900';
+  const cvTextSecondary = paperTheme === 'dark' ? 'text-slate-200' : 'text-slate-800';
 
   return (
     <div className="max-w-[1200px] mx-auto px-4 sm:px-6 py-6 space-y-6 bg-bg-primary min-h-[calc(100vh-4rem)]">
@@ -1567,51 +1736,169 @@ export function CVUpload({ setView, onComplete }: { setView: (view: any) => void
       {/* FULL SCREEN BROWSER POPUP CV VIEWER */}
       <AnimatePresence>
         {showViewCV && generatedCV && (
-          <div className="fixed inset-0 z-50 bg-[#323639] flex flex-col font-sans select-none overflow-hidden animate-in fade-in duration-200">
+          <div className="fixed inset-0 z-50 bg-[#272a2d] flex flex-col font-sans select-none overflow-hidden animate-in fade-in duration-200">
             {/* Top Browser Toolbar */}
-            <div className="h-12 bg-[#202124] text-slate-200 border-b border-slate-700/80 px-4 flex items-center justify-between shrink-0 shadow-md">
-              {/* Left: Hamburger Menu & Filename */}
-              <div className="flex items-center gap-3 min-w-0">
-                <Menu className="w-4 h-4 text-slate-400 shrink-0" />
-                <span className="font-semibold text-slate-200 text-xs truncate max-w-[180px] sm:max-w-xs">
-                  {generatedCV.fullName ? `${generatedCV.fullName.replace(/\s+/g, '_')}_CV.docx` : 'Moni_CV.docx'}
+            <div className="h-12 bg-[#202124] text-slate-200 border-b border-slate-700/80 px-3 sm:px-4 flex items-center justify-between shrink-0 shadow-md relative z-30">
+              {/* Left: Document details & badges */}
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Menu className="w-4 h-4 text-slate-400 shrink-0 hidden sm:block" />
+                <div className="flex flex-col min-w-0">
+                  <span className="font-semibold text-slate-200 text-xs truncate max-w-[130px] sm:max-w-xs">
+                    {generatedCV.fullName ? `${generatedCV.fullName.replace(/\s+/g, '_')}_CV.docx` : 'Moni_CV.docx'}
+                  </span>
+                </div>
+                <span className="hidden md:inline-flex text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-purple-900/60 text-purple-300 border border-purple-700/50">
+                  A4 Print Ready
                 </span>
               </div>
 
-              {/* Center: Toolbar Controls (1/1, Zoom, Rotate, Pen) */}
-              <div className="hidden md:flex items-center gap-3 text-xs text-slate-300 bg-[#2d3034] px-3.5 py-1 rounded-md border border-slate-700 shadow-inner">
-                <span className="font-medium text-slate-300">1 / 1</span>
-                <span className="text-slate-600">|</span>
+              {/* Center: Toolbar Controls (Zoom, Presets, Fit, Themes) */}
+              <div className="flex items-center gap-1.5 sm:gap-2 text-xs text-slate-300 bg-[#2d3034] px-2 sm:px-3 py-1 rounded-md border border-slate-700 shadow-inner relative">
+                <span className="font-medium text-slate-300 hidden sm:inline text-[11px]">1 / 1</span>
+                <span className="text-slate-600 hidden sm:inline">|</span>
+
+                {/* Zoom Out Button */}
                 <button 
                   type="button"
-                  onClick={() => setZoomScale(Math.max(0.6, zoomScale - 0.1))} 
-                  className="hover:text-white cursor-pointer p-0.5" 
-                  title="Zoom Out"
+                  onClick={handleZoomOut} 
+                  className="hover:text-white hover:bg-slate-700 p-1 rounded cursor-pointer transition-colors" 
+                  title="Zoom Out (Ctrl -)"
                 >
                   <ZoomOut className="w-3.5 h-3.5" />
                 </button>
-                <span className="font-mono text-[11px] text-slate-300 min-w-[36px] text-center">{Math.round(zoomScale * 100)}%</span>
+
+                {/* Zoom Percentage Dropdown Trigger */}
+                <div className="relative">
+                  <button 
+                    type="button"
+                    onClick={() => setIsZoomDropdownOpen(!isZoomDropdownOpen)} 
+                    className="flex items-center gap-1 font-mono text-[11px] text-slate-200 hover:text-white hover:bg-slate-700 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
+                    title="Change Zoom Level"
+                  >
+                    <span className="min-w-[34px] text-center">{Math.round(zoomScale * 100)}%</span>
+                    <ChevronDown className="w-3 h-3 text-slate-400" />
+                  </button>
+
+                  {/* Zoom Presets Dropdown */}
+                  {isZoomDropdownOpen && (
+                    <div className="absolute top-8 left-1/2 -translate-x-1/2 bg-[#202124] border border-slate-700 rounded-lg shadow-2xl py-1.5 px-1 z-50 w-44 text-xs text-slate-200 animate-in fade-in zoom-in-95 duration-150">
+                      <div className="px-2.5 py-1 font-semibold text-[10px] text-slate-400 uppercase tracking-wider">Page Fit</div>
+                      <button 
+                        type="button"
+                        onClick={() => { handleFitWidth(); setIsZoomDropdownOpen(false); }} 
+                        className="w-full text-left px-2.5 py-1.5 hover:bg-slate-700 rounded flex justify-between items-center cursor-pointer"
+                      >
+                        <span className="font-medium">Fit to Width</span>
+                        <span className="text-[10px] text-purple-300 font-mono">W</span>
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => { handleFitPage(); setIsZoomDropdownOpen(false); }} 
+                        className="w-full text-left px-2.5 py-1.5 hover:bg-slate-700 rounded flex justify-between items-center cursor-pointer"
+                      >
+                        <span>Fit Page</span>
+                      </button>
+                      <div className="my-1 border-t border-slate-700"></div>
+                      <div className="px-2.5 py-1 font-semibold text-[10px] text-slate-400 uppercase tracking-wider">Presets</div>
+                      {[50, 75, 80, 100, 115, 125, 150, 175, 200].map((pct) => (
+                        <button
+                          key={pct}
+                          type="button"
+                          onClick={() => { setZoomScale(pct / 100); setIsZoomDropdownOpen(false); }}
+                          className={`w-full text-left px-2.5 py-1 hover:bg-slate-700 rounded flex justify-between items-center cursor-pointer ${
+                            Math.round(zoomScale * 100) === pct ? 'text-purple-400 font-bold bg-slate-800' : ''
+                          }`}
+                        >
+                          <span>{pct}%</span>
+                          {pct === 80 && <span className="text-[10px] text-purple-300">Default (0)</span>}
+                          {pct === 100 && <span className="text-[10px] text-slate-400">Actual</span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Zoom In Button */}
                 <button 
                   type="button"
-                  onClick={() => setZoomScale(Math.min(1.5, zoomScale + 0.1))} 
-                  className="hover:text-white cursor-pointer p-0.5" 
-                  title="Zoom In"
+                  onClick={handleZoomIn} 
+                  className="hover:text-white hover:bg-slate-700 p-1 rounded cursor-pointer transition-colors" 
+                  title="Zoom In (Ctrl +)"
                 >
                   <ZoomIn className="w-3.5 h-3.5" />
                 </button>
-                <span className="text-slate-600">|</span>
+
+                <span className="text-slate-600 hidden sm:inline">|</span>
+
+                {/* Fit to Width Quick Button */}
                 <button 
                   type="button"
-                  onClick={() => setZoomScale(1.0)} 
-                  className="hover:text-white cursor-pointer p-0.5" 
-                  title="Reset Scale"
+                  onClick={handleFitWidth}
+                  className="hidden sm:flex items-center gap-1 hover:text-white hover:bg-slate-700 px-1.5 py-0.5 rounded cursor-pointer transition-colors text-[11px]"
+                  title="Fit to Window Width (Press 'W')"
+                >
+                  <Maximize2 className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Fit Width</span>
+                </button>
+
+                {/* Reset to 80% */}
+                <button 
+                  type="button"
+                  onClick={handleResetZoom} 
+                  className="hover:text-white hover:bg-slate-700 p-1 rounded cursor-pointer transition-colors" 
+                  title="Reset to Default 80% (Ctrl 0)"
                 >
                   <RotateCw className="w-3.5 h-3.5" />
                 </button>
-                <PenTool className="w-3.5 h-3.5 text-slate-400 ml-1" />
+
+                <span className="text-slate-600 hidden md:inline">|</span>
+
+                {/* Paper Themes (Light / Sepia / Dark) */}
+                <div className="hidden md:flex items-center gap-1 bg-[#1e2022] p-0.5 rounded border border-slate-700/60" title="Reading Paper Theme">
+                  <button
+                    type="button"
+                    onClick={() => setPaperTheme('light')}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-medium transition-all cursor-pointer ${
+                      paperTheme === 'light' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    White
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaperTheme('sepia')}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-medium transition-all cursor-pointer ${
+                      paperTheme === 'sepia' ? 'bg-[#fbf7ed] text-[#3d2f23] shadow-sm' : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Sepia
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaperTheme('dark')}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-medium transition-all cursor-pointer ${
+                      paperTheme === 'dark' ? 'bg-slate-800 text-slate-100 shadow-sm' : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Dark
+                  </button>
+                </div>
+
+                {/* Font Comfort Mode Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setFontComfortMode(prev => prev === 'comfortable' ? 'standard' : 'comfortable')}
+                  className={`hidden lg:flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors cursor-pointer ${
+                    fontComfortMode === 'comfortable' ? 'bg-purple-900/60 text-purple-300 border border-purple-700/50' : 'text-slate-400 hover:text-white'
+                  }`}
+                  title={fontComfortMode === 'comfortable' ? 'Comfort Text Size (Active)' : 'Standard Text Size'}
+                >
+                  <Type className="w-3 h-3" />
+                  <span>{fontComfortMode === 'comfortable' ? 'Comfort' : 'Standard'}</span>
+                </button>
               </div>
 
-              {/* Upper Right Corner Controls: Print, Download PDF, Download DOCX, Close X */}
+              {/* Upper Right Corner Controls: Print, Download PDF, Download DOCX */}
               <div className="flex items-center gap-2 sm:gap-2.5">
                 <button
                   type="button"
@@ -1644,31 +1931,58 @@ export function CVUpload({ setView, onComplete }: { setView: (view: any) => void
                   {downloadingDocx ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
                   <span className="hidden sm:inline">DOCX</span>
                 </button>
-
-                {/* Close / Go Back X Option */}
-                <button
-                  type="button"
-                  onClick={() => setShowViewCV(false)}
-                  className="p-1.5 bg-slate-700/60 hover:bg-red-600 rounded-full text-slate-200 hover:text-white transition-colors cursor-pointer ml-2 shadow-xs"
-                  title="Close Preview & Go Back"
-                >
-                  <X className="w-5 h-5" />
-                </button>
               </div>
             </div>
 
+            {/* The ONLY Top-Right Cross (X) Option */}
+            <button
+              type="button"
+              onClick={() => setShowViewCV(false)}
+              className="fixed top-14 right-6 z-[60] bg-red-600 hover:bg-red-700 text-white p-2.5 rounded-full shadow-2xl hover:scale-105 transition-all cursor-pointer flex items-center justify-center border border-white/30"
+              title="Close CV & Go Back (Esc)"
+              aria-label="Close CV Preview"
+            >
+              <X className="w-5 h-5 stroke-[2.5]" />
+            </button>
+
             {/* Main Document View Canvas */}
-            <div className="flex-1 overflow-y-auto bg-[#323639] p-4 sm:p-10 flex justify-center items-start">
+            <div 
+              ref={viewerContainerRef}
+              onClick={() => { if (isZoomDropdownOpen) setIsZoomDropdownOpen(false); }}
+              onWheel={(e) => {
+                if (e.ctrlKey || e.metaKey) {
+                  e.preventDefault();
+                  if (e.deltaY < 0) handleZoomIn();
+                  else handleZoomOut();
+                }
+              }}
+              className="flex-1 overflow-auto bg-[#2b2e31] p-4 sm:p-10 flex justify-center items-start relative scroll-smooth"
+            >
+              {/* Scaled wrapper ensuring proper scroll boundary */}
               <div
-                style={{ transform: `scale(${zoomScale})`, transformOrigin: 'top center' }}
-                className="print-content bg-white text-slate-900 shadow-2xl rounded-sm max-w-4xl w-full p-8 sm:p-14 border border-slate-300 font-serif text-left transition-transform duration-150 space-y-4 min-h-[1050px] my-4"
+                style={{
+                  width: `${850 * zoomScale}px`,
+                  minHeight: `${1100 * zoomScale}px`,
+                  transition: 'width 0.12s ease-out, min-height 0.12s ease-out'
+                }}
+                className="my-4 shrink-0 flex justify-center"
               >
+                <div
+                  style={{ transform: `scale(${zoomScale})`, transformOrigin: 'top center', width: '850px', minHeight: '1100px' }}
+                  className={`print-content relative shadow-2xl rounded-sm p-8 sm:p-14 border transition-colors duration-150 space-y-4 shrink-0 font-serif text-left ${
+                    paperTheme === 'sepia'
+                      ? 'bg-[#fcf9f2] text-[#2c2621] border-[#e7e0d2]'
+                      : paperTheme === 'dark'
+                      ? 'bg-[#1e293b] text-slate-100 border-slate-700'
+                      : 'bg-white text-slate-900 border-slate-300'
+                  }`}
+                >
                 {/* Document Header */}
-                <div className="text-center pb-3 border-b border-slate-800">
+                <div className={`text-center pb-3 border-b ${cvHeaderBorder}`}>
                   <h1 className="text-3xl sm:text-4xl font-extrabold uppercase tracking-widest text-[#5b21b6] mb-2">
                     {generatedCV.fullName}
                   </h1>
-                  <div className="flex flex-wrap justify-center items-center gap-x-2 gap-y-1 text-xs text-slate-700 font-sans">
+                  <div className={`flex flex-wrap justify-center items-center gap-x-2 gap-y-1 ${cvTextSub} ${cvTextMuted} font-sans`}>
                     {generatedCV.location && <span>{generatedCV.location}</span>}
                     {generatedCV.email && <span>| Email: {generatedCV.email}</span>}
                     {generatedCV.phone && <span>| Phone: {generatedCV.phone}</span>}
@@ -1681,24 +1995,24 @@ export function CVUpload({ setView, onComplete }: { setView: (view: any) => void
                 {/* Professional Summary */}
                 {generatedCV.summary && (
                   <div className="space-y-1">
-                    <h2 className="text-xs font-bold uppercase tracking-wider text-[#5b21b6]">PROFESSIONAL SUMMARY</h2>
-                    <p className="text-xs text-slate-800 leading-relaxed text-justify font-sans">{generatedCV.summary}</p>
+                    <h2 className={`text-xs font-bold uppercase tracking-wider ${cvHeadingColor}`}>PROFESSIONAL SUMMARY</h2>
+                    <p className={`${cvTextBody} ${cvTextSecondary} text-justify font-sans`}>{generatedCV.summary}</p>
                   </div>
                 )}
 
                 {/* Education */}
                 {generatedCV.education && generatedCV.education.length > 0 && (
                   <div className="space-y-1.5">
-                    <h2 className="text-xs font-bold uppercase tracking-wider text-[#5b21b6]">EDUCATION</h2>
+                    <h2 className={`text-xs font-bold uppercase tracking-wider ${cvHeadingColor}`}>EDUCATION</h2>
                     <div className="space-y-1.5 font-sans">
                       {generatedCV.education.map((edu, idx) => (
-                        <div key={idx} className="text-xs space-y-0.5">
-                          <div className="flex justify-between items-baseline font-bold text-slate-900">
-                            <span>{edu.degree} <span className="font-normal text-slate-700">| {edu.school}</span></span>
-                            {edu.year && <span className="text-[11px] text-slate-600 font-normal">{edu.year}</span>}
+                        <div key={idx} className={`${cvTextBody} space-y-0.5`}>
+                          <div className={`flex justify-between items-baseline font-bold ${cvTextPrimary}`}>
+                            <span>{edu.degree} <span className={`font-normal ${cvTextMuted}`}>| {edu.school}</span></span>
+                            {edu.year && <span className={`${cvTextSub} ${cvTextMuted} font-normal`}>{edu.year}</span>}
                           </div>
                           {(edu.coursework || edu.gpa) && (
-                            <p className="text-[11px] text-slate-700 pl-3">
+                            <p className={`${cvTextSub} ${cvTextMuted} pl-3`}>
                               • <span className="font-semibold">Relevant Coursework: </span>
                               {edu.coursework || `GPA: ${edu.gpa}`}
                             </p>
@@ -1712,8 +2026,8 @@ export function CVUpload({ setView, onComplete }: { setView: (view: any) => void
                 {/* Technical Skills */}
                 {generatedCV.skills && generatedCV.skills.length > 0 && (
                   <div className="space-y-1">
-                    <h2 className="text-xs font-bold uppercase tracking-wider text-[#5b21b6]">TECHNICAL SKILLS</h2>
-                    <div className="space-y-1 text-xs text-slate-800 font-sans">
+                    <h2 className={`text-xs font-bold uppercase tracking-wider ${cvHeadingColor}`}>TECHNICAL SKILLS</h2>
+                    <div className={`space-y-1 ${cvTextBody} ${cvTextSecondary} font-sans`}>
                       {(Array.isArray(generatedCV.skills) ? generatedCV.skills : []).map((sGroup, idx) => {
                         if (typeof sGroup === 'string') {
                           return (
@@ -1726,8 +2040,8 @@ export function CVUpload({ setView, onComplete }: { setView: (view: any) => void
                         const items = Array.isArray(sGroup?.items) ? sGroup.items.join(', ') : String(sGroup?.items || '');
                         return (
                           <div key={idx} className="leading-snug">
-                            <span className="font-bold text-slate-900">{sGroup.category}: </span>
-                            <span className="text-slate-800">{items}</span>
+                            <span className={`font-bold ${cvTextPrimary}`}>{sGroup.category}: </span>
+                            <span className={cvTextSecondary}>{items}</span>
                           </div>
                         );
                       })}
@@ -1738,17 +2052,17 @@ export function CVUpload({ setView, onComplete }: { setView: (view: any) => void
                 {/* Projects */}
                 {generatedCV.projects && generatedCV.projects.length > 0 && (
                   <div className="space-y-2">
-                    <h2 className="text-xs font-bold uppercase tracking-wider text-[#5b21b6]">PROJECTS</h2>
+                    <h2 className={`text-xs font-bold uppercase tracking-wider ${cvHeadingColor}`}>PROJECTS</h2>
                     <div className="space-y-2 font-sans">
                       {generatedCV.projects.map((proj, idx) => {
                         const cleanStack = sanitizeTechStack(proj.techStack);
                         const techStackStr = cleanStack.join(', ');
                         const titleLine = [proj.name || proj.title, proj.subtitle, techStackStr].filter(Boolean).join(' | ');
                         return (
-                          <div key={idx} className="text-xs space-y-1">
-                            <p className="font-bold text-slate-900">{titleLine}</p>
+                          <div key={idx} className={`${cvTextBody} space-y-1`}>
+                            <p className={`font-bold ${cvTextPrimary}`}>{titleLine}</p>
                             {Array.isArray(proj.description) ? (
-                              <ul className="space-y-0.5 text-slate-800 pl-3">
+                              <ul className={`space-y-0.5 ${cvTextSecondary} pl-3`}>
                                 {proj.description.map((bullet, bIdx) => (
                                   <li key={bIdx} className="flex items-start gap-1.5">
                                     <span>•</span>
@@ -1757,7 +2071,7 @@ export function CVUpload({ setView, onComplete }: { setView: (view: any) => void
                                 ))}
                               </ul>
                             ) : (
-                              <p className="text-slate-800 pl-3 flex items-start gap-1.5">
+                              <p className={`${cvTextSecondary} pl-3 flex items-start gap-1.5`}>
                                 <span>•</span>
                                 <span>{proj.description}</span>
                               </p>
@@ -1772,15 +2086,15 @@ export function CVUpload({ setView, onComplete }: { setView: (view: any) => void
                 {/* Experience */}
                 {generatedCV.experience && generatedCV.experience.length > 0 && (
                   <div className="space-y-2">
-                    <h2 className="text-xs font-bold uppercase tracking-wider text-[#5b21b6]">EXPERIENCE</h2>
+                    <h2 className={`text-xs font-bold uppercase tracking-wider ${cvHeadingColor}`}>EXPERIENCE</h2>
                     <div className="space-y-2 font-sans">
                       {generatedCV.experience.map((exp, idx) => {
                         const headerLine = [exp.company, exp.role, exp.location, exp.duration].filter(Boolean).join(' | ');
                         return (
-                          <div key={idx} className="text-xs space-y-1">
-                            <p className="font-bold text-slate-900">{headerLine}</p>
+                          <div key={idx} className={`${cvTextBody} space-y-1`}>
+                            <p className={`font-bold ${cvTextPrimary}`}>{headerLine}</p>
                             {Array.isArray(exp.description) ? (
-                              <ul className="space-y-0.5 text-slate-800 pl-3">
+                              <ul className={`space-y-0.5 ${cvTextSecondary} pl-3`}>
                                 {exp.description.map((bullet, bIdx) => (
                                   <li key={bIdx} className="flex items-start gap-1.5">
                                     <span>•</span>
@@ -1789,7 +2103,7 @@ export function CVUpload({ setView, onComplete }: { setView: (view: any) => void
                                 ))}
                               </ul>
                             ) : (
-                              <p className="text-slate-800 pl-3 flex items-start gap-1.5">
+                              <p className={`${cvTextSecondary} pl-3 flex items-start gap-1.5`}>
                                 <span>•</span>
                                 <span>{exp.description}</span>
                               </p>
@@ -1804,8 +2118,8 @@ export function CVUpload({ setView, onComplete }: { setView: (view: any) => void
                 {/* Certifications & Achievements */}
                 {(generatedCV.certifications || builderFormData.certifications) && (
                   <div className="space-y-1">
-                    <h2 className="text-xs font-bold uppercase tracking-wider text-[#5b21b6]">CERTIFICATIONS & ACHIEVEMENTS</h2>
-                    <div className="text-xs text-slate-800 pl-3 space-y-0.5 font-sans">
+                    <h2 className={`text-xs font-bold uppercase tracking-wider ${cvHeadingColor}`}>CERTIFICATIONS & ACHIEVEMENTS</h2>
+                    <div className={`${cvTextBody} ${cvTextSecondary} pl-3 space-y-0.5 font-sans`}>
                       {Array.isArray(generatedCV.certifications) ? (
                         generatedCV.certifications.map((cert, idx) => (
                           <div key={idx} className="flex items-start gap-1.5">
@@ -1826,8 +2140,8 @@ export function CVUpload({ setView, onComplete }: { setView: (view: any) => void
                 {/* Languages */}
                 {(generatedCV.languages || builderFormData.languages) && (
                   <div className="space-y-0.5">
-                    <h2 className="text-xs font-bold uppercase tracking-wider text-[#5b21b6]">LANGUAGES</h2>
-                    <div className="text-xs text-slate-800 pl-3 flex items-start gap-1.5 font-sans">
+                    <h2 className={`text-xs font-bold uppercase tracking-wider ${cvHeadingColor}`}>LANGUAGES</h2>
+                    <div className={`${cvTextBody} ${cvTextSecondary} pl-3 flex items-start gap-1.5 font-sans`}>
                       <span>•</span>
                       <span>{Array.isArray(generatedCV.languages) ? generatedCV.languages.join(' | ') : (generatedCV.languages || builderFormData.languages)}</span>
                     </div>
@@ -1837,8 +2151,8 @@ export function CVUpload({ setView, onComplete }: { setView: (view: any) => void
                 {/* Interests & Goals */}
                 {(generatedCV.interests || builderFormData.interests) && (
                   <div className="space-y-0.5">
-                    <h2 className="text-xs font-bold uppercase tracking-wider text-[#5b21b6]">INTERESTS & GOALS</h2>
-                    <div className="text-xs text-slate-800 pl-3 space-y-0.5 font-sans">
+                    <h2 className={`text-xs font-bold uppercase tracking-wider ${cvHeadingColor}`}>INTERESTS & GOALS</h2>
+                    <div className={`${cvTextBody} ${cvTextSecondary} pl-3 space-y-0.5 font-sans`}>
                       {Array.isArray(generatedCV.interests) ? (
                         generatedCV.interests.map((item, idx) => (
                           <div key={idx} className="flex items-start gap-1.5">
@@ -1855,7 +2169,68 @@ export function CVUpload({ setView, onComplete }: { setView: (view: any) => void
                     </div>
                   </div>
                 )}
+                </div>
               </div>
+            </div>
+
+            {/* Floating Quick Action HUD (Always accessible while reading) */}
+            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-[#1e2022]/90 backdrop-blur-md text-slate-200 border border-slate-700/80 px-3 sm:px-4 py-2 rounded-full shadow-2xl flex items-center gap-2 sm:gap-3 text-xs">
+              <button 
+                type="button" 
+                onClick={handleZoomOut} 
+                className="hover:text-white hover:bg-slate-700/80 p-1.5 rounded-full cursor-pointer transition-colors"
+                title="Zoom Out (Ctrl -)"
+              >
+                <ZoomOut className="w-4 h-4" />
+              </button>
+
+              <button 
+                type="button" 
+                onClick={handleResetZoom}
+                className="font-mono text-xs font-semibold px-2 py-0.5 rounded hover:bg-slate-700/80 cursor-pointer text-purple-300 hover:text-white transition-colors"
+                title="Click to reset to default 80% (Ctrl 0)"
+              >
+                {Math.round(zoomScale * 100)}%
+              </button>
+
+              <button 
+                type="button" 
+                onClick={handleZoomIn} 
+                className="hover:text-white hover:bg-slate-700/80 p-1.5 rounded-full cursor-pointer transition-colors"
+                title="Zoom In (Ctrl +)"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </button>
+
+              <span className="text-slate-600">|</span>
+
+              <button
+                type="button"
+                onClick={handleFitWidth}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-900/60 hover:bg-purple-800 text-purple-200 hover:text-white font-medium cursor-pointer transition-colors text-[11px] border border-purple-600/50"
+                title="Fit to window width (Press 'W')"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+                <span>Fit Width</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPaperTheme(prev => prev === 'light' ? 'sepia' : prev === 'sepia' ? 'dark' : 'light')}
+                className="p-1.5 rounded-full hover:bg-slate-700/80 text-slate-300 hover:text-white cursor-pointer transition-colors"
+                title={`Paper Theme: ${paperTheme} (Click to change)`}
+              >
+                {paperTheme === 'light' ? <Sun className="w-4 h-4 text-amber-400" /> : paperTheme === 'sepia' ? <BookOpen className="w-4 h-4 text-amber-200" /> : <Moon className="w-4 h-4 text-indigo-300" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFontComfortMode(prev => prev === 'comfortable' ? 'standard' : 'comfortable')}
+                className={`p-1.5 rounded-full hover:bg-slate-700/80 cursor-pointer transition-colors ${fontComfortMode === 'comfortable' ? 'text-purple-300' : 'text-slate-300'}`}
+                title={fontComfortMode === 'comfortable' ? 'Font Size: Comfort (Click for standard)' : 'Font Size: Standard (Click for comfort)'}
+              >
+                <Type className="w-4 h-4" />
+              </button>
             </div>
           </div>
         )}

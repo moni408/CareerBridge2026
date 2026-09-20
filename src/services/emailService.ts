@@ -2,10 +2,50 @@ import emailjs from '@emailjs/browser';
 import { db } from '../lib/firebase';
 import { collection, addDoc } from 'firebase/firestore';
 
-// EmailJS keys - loaded from environment variables or configured default fallback
-const EMAILJS_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID || 'service_g9twfec';
-const EMAILJS_TEMPLATE_ID = import.meta.env.VITE_EMAILJS_TEMPLATE_ID || 'template_l4fjhg1';
-const EMAILJS_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY || 'yiUQrPN9ZiXdhz3bl';
+// EmailJS keys - loaded from environment variables, localStorage, or configured default fallback
+export function getEmailJsConfig() {
+  const localServiceId = typeof window !== 'undefined' ? localStorage.getItem('careerbridge_emailjs_service_id') : null;
+  const localTemplateId = typeof window !== 'undefined' ? localStorage.getItem('careerbridge_emailjs_template_id') : null;
+  const localPublicKey = typeof window !== 'undefined' ? localStorage.getItem('careerbridge_emailjs_public_key') : null;
+
+  const serviceId = (localServiceId || import.meta.env.VITE_EMAILJS_SERVICE_ID || 'service_9w5waba').trim();
+  const templateId = (localTemplateId || import.meta.env.VITE_EMAILJS_TEMPLATE_ID || 'template_8rzmow8').trim();
+  const publicKey = (localPublicKey || import.meta.env.VITE_EMAILJS_PUBLIC_KEY || 'yiUQrPN9ZiXdhz3bl').trim();
+
+  return { serviceId, templateId, publicKey };
+}
+
+export function saveEmailJsConfig(serviceId: string, templateId?: string, publicKey?: string) {
+  if (typeof window !== 'undefined') {
+    if (serviceId) localStorage.setItem('careerbridge_emailjs_service_id', serviceId.trim());
+    if (templateId) localStorage.setItem('careerbridge_emailjs_template_id', templateId.trim());
+    if (publicKey) localStorage.setItem('careerbridge_emailjs_public_key', publicKey.trim());
+    try {
+      emailjs.init(publicKey || getEmailJsConfig().publicKey);
+    } catch (_) {}
+  }
+}
+
+export function resetEmailJsConfigToDefault() {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('careerbridge_emailjs_service_id');
+    localStorage.removeItem('careerbridge_emailjs_template_id');
+    localStorage.removeItem('careerbridge_emailjs_public_key');
+    try {
+      emailjs.init('yiUQrPN9ZiXdhz3bl');
+    } catch (_) {}
+  }
+}
+
+// Initialize EmailJS with Public Key
+try {
+  const config = getEmailJsConfig();
+  if (config.publicKey) {
+    emailjs.init(config.publicKey);
+  }
+} catch (initErr) {
+  console.warn('EmailJS initialization warning:', initErr);
+}
 
 export const APP_BRAND_NAME = 'CareerBridge';
 export const APP_LOGO_URL = 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png'; // Professional CareerBridge icon
@@ -124,11 +164,12 @@ export async function sendEmailAlert(params: {
         action_url: params.meetingLink || siteOrigin
       };
 
+      const { serviceId, templateId, publicKey } = getEmailJsConfig();
       await emailjs.send(
-        EMAILJS_SERVICE_ID,
-        EMAILJS_TEMPLATE_ID,
+        serviceId,
+        templateId,
         templateParams,
-        EMAILJS_PUBLIC_KEY
+        publicKey
       );
       console.log('EmailJS alert dispatched successfully to', targetEmail);
     } catch (emailErr) {
@@ -183,16 +224,34 @@ export async function sendStudentVerificationEmail(params: {
   const siteOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://careerbridge.app';
   
   const templateParams = {
+    // Recipient aliases
     to_name: params.studentName,
+    user_name: params.studentName,
+    name: params.studentName,
     to_email: params.studentEmail,
+    user_email: params.studentEmail,
+    email: params.studentEmail,
+    recipient_email: params.studentEmail,
+    reply_to: params.studentEmail,
+
+    // Sender details
     from_name: `${APP_BRAND_NAME} Security Team`,
     subject: `[${APP_BRAND_NAME}] 2-Step Security Verification: Verify it is you`,
+    title: `2-Step Security Verification`,
+
+    // Content variables
     verification_code: params.verificationCode,
+    code: params.verificationCode,
+    otp: params.verificationCode,
     verification_link: params.verificationLink,
+    link: params.verificationLink,
     message: formatBrandedEmailMessage(
       `Hello ${params.studentName},\n\nA registration attempt was made with your email address (${params.studentEmail}).\n\nVerify it is you to complete student registration on ${APP_BRAND_NAME}:\nSecurity Code: ${params.verificationCode}\nDirect Verification Link: ${params.verificationLink}`,
       params.verificationLink
     ),
+    body: `Your ${APP_BRAND_NAME} 6-digit verification code is: ${params.verificationCode}`,
+
+    // Branding and metadata
     site_name: APP_BRAND_NAME,
     app_name: APP_BRAND_NAME,
     site_logo: APP_LOGO_URL,
@@ -201,17 +260,88 @@ export async function sendStudentVerificationEmail(params: {
   };
 
   try {
-    await emailjs.send(
-      EMAILJS_SERVICE_ID,
-      EMAILJS_TEMPLATE_ID,
+    const { serviceId, templateId, publicKey } = getEmailJsConfig();
+    const response = await emailjs.send(
+      serviceId,
+      templateId,
       templateParams,
-      EMAILJS_PUBLIC_KEY
+      publicKey
     );
-    console.log('2-Step Security verification email dispatched via EmailJS to', params.studentEmail);
+    console.log('2-Step Security verification email dispatched via EmailJS to', params.studentEmail, response);
     return { success: true, message: 'Verification email sent via EmailJS.' };
-  } catch (emailErr) {
+  } catch (emailErr: any) {
     console.error('EmailJS delivery failed for verification email:', emailErr);
-    return { success: false, message: `Email delivery failed: ${emailErr instanceof Error ? emailErr.message : 'Check EmailJS configuration'}` };
+    const detail = emailErr?.text || emailErr?.message || (typeof emailErr === 'string' ? emailErr : JSON.stringify(emailErr));
+    const status = emailErr?.status ? `[Status ${emailErr.status}] ` : '';
+    return { success: false, message: `${status}${detail}` };
+  }
+}
+
+/**
+ * Sends a corporate / work email verification code via EmailJS for Mentor auto-verification
+ */
+export async function sendCorporateVerificationEmail(params: {
+  mentorName: string;
+  companyName: string;
+  corporateEmail: string;
+  verificationCode: string;
+  verificationLink?: string;
+}): Promise<{ success: boolean; message: string }> {
+  const siteOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://careerbridge.app';
+  const directLink = params.verificationLink || `${siteOrigin}?verify_code=${params.verificationCode}&corporate_email=${encodeURIComponent(params.corporateEmail)}`;
+
+  const templateParams = {
+    // Recipient fields
+    to_name: params.mentorName,
+    user_name: params.mentorName,
+    name: params.mentorName,
+    to_email: params.corporateEmail,
+    user_email: params.corporateEmail,
+    email: params.corporateEmail,
+    recipient_email: params.corporateEmail,
+    reply_to: params.corporateEmail,
+
+    // Subject and sender
+    from_name: `${APP_BRAND_NAME} Mentor Verification`,
+    subject: `[${APP_BRAND_NAME}] Corporate Email Verification: Verify your standing at ${params.companyName || 'your organization'}`,
+    title: `Corporate Email Verification`,
+
+    // Content
+    company_name: params.companyName || 'Organization',
+    verification_code: params.verificationCode,
+    code: params.verificationCode,
+    otp: params.verificationCode,
+    verification_link: directLink,
+    link: directLink,
+    message: formatBrandedEmailMessage(
+      `Hello ${params.mentorName},\n\nPlease confirm your corporate email address (${params.corporateEmail}) to instantly authenticate your Mentor credentials for ${params.companyName || 'your organization'}.\n\nYour 6-digit corporate verification code is: ${params.verificationCode}\n\nVerifying this code completes your authentication immediately with direct workspace access (no admin wait required).`,
+      directLink
+    ),
+    body: `Your 6-digit corporate verification code is: ${params.verificationCode}`,
+
+    // Platform metadata
+    site_name: APP_BRAND_NAME,
+    app_name: APP_BRAND_NAME,
+    site_logo: APP_LOGO_URL,
+    logo_url: APP_LOGO_URL,
+    site_url: siteOrigin
+  };
+
+  try {
+    const { serviceId, templateId, publicKey } = getEmailJsConfig();
+    const response = await emailjs.send(
+      serviceId,
+      templateId,
+      templateParams,
+      publicKey
+    );
+    console.log('Corporate verification email dispatched via EmailJS to', params.corporateEmail, response);
+    return { success: true, message: 'Corporate verification email dispatched.' };
+  } catch (emailErr: any) {
+    console.error('EmailJS delivery failed for corporate verification email:', emailErr);
+    const detail = emailErr?.text || emailErr?.message || (typeof emailErr === 'string' ? emailErr : JSON.stringify(emailErr));
+    const status = emailErr?.status ? `[Status ${emailErr.status}] ` : '';
+    return { success: false, message: `${status}${detail}` };
   }
 }
 
@@ -325,11 +455,12 @@ export async function sendCrossRoleEmailNotification(params: CrossRoleEmailParam
         action_url: targetActionUrl
       };
 
+      const { serviceId, templateId, publicKey } = getEmailJsConfig();
       await emailjs.send(
-        EMAILJS_SERVICE_ID,
-        EMAILJS_TEMPLATE_ID,
+        serviceId,
+        templateId,
         templateParams,
-        EMAILJS_PUBLIC_KEY
+        publicKey
       );
       console.log(`[EmailJS] Cross-role email notification dispatched to ${targetEmail} (${recipientRole}) from ${senderName} (${senderRole})`);
     } catch (emailErr) {

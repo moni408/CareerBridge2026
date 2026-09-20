@@ -132,7 +132,7 @@ export function CVGenerator() {
             ]),
             
             new Paragraph({ text: "SKILLS", heading: HeadingLevel.HEADING_3 }),
-            new Paragraph({ text: generatedCV.skills.map(s => `${s.category}: ${s.items.join(', ')}`).join(' | ') }),
+            new Paragraph({ text: (Array.isArray(generatedCV.skills) ? generatedCV.skills : []).map(s => typeof s === 'string' ? s : `${s.category || 'Skills'}: ${Array.isArray(s.items) ? s.items.join(', ') : (s.items || '')}`).join(' | ') }),
           ],
         }],
       });

@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Briefcase, ArrowRight, ChevronLeft, ChevronDown, Sparkles, CheckCircle2, Star, Zap, Mail, Lock, User, AlertCircle, Loader2, Target, Users, BookOpen, Award, TrendingUp, FileUp, Globe, Linkedin, Github, Twitter, MessageSquare, Clock, ShieldCheck, Cpu, Menu, X, Building2, GraduationCap, Info, Plus 
+  Briefcase, ArrowRight, ChevronLeft, ChevronDown, Sparkles, CheckCircle2, Star, Zap, Mail, Lock, User, AlertCircle, Loader2, Target, Users, BookOpen, Award, TrendingUp, FileUp, FileText, Globe, Linkedin, Github, Twitter, MessageSquare, Clock, ShieldCheck, Cpu, Menu, X, Building2, GraduationCap, Info, Plus 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { signInWithEmail, signUpWithEmail, updateAuthProfile, resetPassword, db, logout, withTimeout } from '../lib/firebase';
 import { doc, setDoc, collection, addDoc } from 'firebase/firestore';
-import { sendStudentVerificationEmail } from '../services/emailService';
+import { sendStudentVerificationEmail, sendCorporateVerificationEmail, getEmailJsConfig, saveEmailJsConfig, resetEmailJsConfigToDefault } from '../services/emailService';
 import { ThemeToggle } from './ThemeToggle';
 import HeroSection from './HeroSection';
 
@@ -213,6 +213,130 @@ export function Auth({ onSignIn }: AuthProps) {
   const [mentorSignupStep, setMentorSignupStep] = useState<1 | 2 | 3>(1);
   const [customSpecialtyInput, setCustomSpecialtyInput] = useState('');
 
+  // Employment Verification States
+  const [verificationMethod, setVerificationMethod] = useState<'corporate_email' | 'employment_document'>('corporate_email');
+  const [corporateWorkEmail, setCorporateWorkEmail] = useState('');
+  const [employmentDocumentUrl, setEmploymentDocumentUrl] = useState('');
+  const [employmentDocFileName, setEmploymentDocFileName] = useState('');
+
+  // Mentor Corporate Email Auto-Verification States
+  const [corporateVerificationCode, setCorporateVerificationCode] = useState<string>('');
+  const [corporateCodeSent, setCorporateCodeSent] = useState<boolean>(false);
+  const [userEnteredCorporateCode, setUserEnteredCorporateCode] = useState<string>('');
+  const [corporateVerificationSending, setCorporateVerificationSending] = useState<boolean>(false);
+  const [corporateVerificationVerifying, setCorporateVerificationVerifying] = useState<boolean>(false);
+  const [corporateVerificationError, setCorporateVerificationError] = useState<string | null>(null);
+  const [corporateVerificationSuccess, setCorporateVerificationSuccess] = useState<string | null>(null);
+  const [isCorporateEmailVerified, setIsCorporateEmailVerified] = useState<boolean>(false);
+
+  const handleSendCorporateCode = async () => {
+    setError(null);
+    setCorporateVerificationError(null);
+    setCorporateVerificationSuccess(null);
+
+    const emailTrimmed = corporateWorkEmail.trim().toLowerCase();
+    if (!emailTrimmed || !emailTrimmed.includes('@')) {
+      setCorporateVerificationError("Please enter a valid corporate / work email address.");
+      return;
+    }
+
+    const genericDomains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'aol.com', 'mail.com', 'icloud.com', 'protonmail.com', 'zoho.com'];
+    const emailDomain = emailTrimmed.split('@')[1] || '';
+    if (genericDomains.includes(emailDomain)) {
+      setCorporateVerificationError("Please enter your official company email domain (e.g. @google.com, not public email services like @gmail.com).");
+      return;
+    }
+
+    setCorporateVerificationSending(true);
+    const generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
+    setCorporateVerificationCode(generatedCode);
+    setCorporateCodeSent(true);
+    setUserEnteredCorporateCode('');
+
+    try {
+      const fullName = `${mentorFirstName} ${mentorLastName}`.trim() || 'Industry Mentor';
+      const result = await sendCorporateVerificationEmail({
+        mentorName: fullName,
+        companyName: mentorCompany.trim() || 'Your Organization',
+        corporateEmail: emailTrimmed,
+        verificationCode: generatedCode
+      });
+
+      if (result.success) {
+        setCorporateVerificationSuccess(`Verification code dispatched to ${emailTrimmed}! Check your corporate inbox or spam folder.`);
+      } else {
+        setCorporateVerificationError(`EmailJS delivery notice: ${result.message}. You can still enter code or retry.`);
+      }
+    } catch (err: any) {
+      setCorporateVerificationError("Could not dispatch verification email. Please check your network and click resend.");
+    } finally {
+      setCorporateVerificationSending(false);
+    }
+  };
+
+  const handleVerifyCorporateCode = () => {
+    setCorporateVerificationError(null);
+    setCorporateVerificationVerifying(true);
+
+    setTimeout(() => {
+      const entered = userEnteredCorporateCode.trim();
+      if (!entered) {
+        setCorporateVerificationError("Please enter the 6-digit verification code sent to your corporate email.");
+        setCorporateVerificationVerifying(false);
+        return;
+      }
+      if (entered !== corporateVerificationCode) {
+        setCorporateVerificationError("Invalid 6-digit code. Please verify the code in your corporate inbox or spam.");
+        setCorporateVerificationVerifying(false);
+        return;
+      }
+
+      setIsCorporateEmailVerified(true);
+      setCorporateVerificationSuccess("Corporate email successfully verified! You have unlocked instant auto-approval with direct login.");
+      setCorporateVerificationError(null);
+      setCorporateVerificationVerifying(false);
+      setError(null);
+    }, 400);
+  };
+
+  const handleResetCorporateEmail = () => {
+    setIsCorporateEmailVerified(false);
+    setCorporateCodeSent(false);
+    setCorporateVerificationCode('');
+    setUserEnteredCorporateCode('');
+    setCorporateVerificationSuccess(null);
+    setCorporateVerificationError(null);
+  };
+
+  const handleEmploymentDocUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Allowed formats: pdf, docx, png, jpeg/jpg
+    const allowedExtensions = ['.pdf', '.docx', '.png', '.jpeg', '.jpg'];
+    const fileName = file.name.toLowerCase();
+    const isAllowed = allowedExtensions.some(ext => fileName.endsWith(ext));
+
+    if (!isAllowed) {
+      setError("Please upload a valid file format (PDF, DOCX, PNG, or JPEG).");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setError("File size exceeds 5MB limit. Please choose a smaller file.");
+      return;
+    }
+
+    setError(null);
+    setEmploymentDocFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result as string;
+      setEmploymentDocumentUrl(base64);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const validateStep1 = () => {
     setError(null);
     if (!mentorFirstName.trim() || !mentorLastName.trim()) {
@@ -248,8 +372,34 @@ export function Auth({ onSignIn }: AuthProps) {
       setError("Company / Association is required.");
       return false;
     }
-    if (!mentorRate.trim() || isNaN(Number(mentorRate)) || Number(mentorRate) <= 0) {
-      setError("Please enter a valid positive Hourly Rate.");
+    if (verificationMethod === 'corporate_email') {
+      if (!corporateWorkEmail.trim() || !corporateWorkEmail.includes('@')) {
+        setError("Please enter a valid corporate / work email address.");
+        return false;
+      }
+      const genericDomains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'aol.com', 'mail.com', 'icloud.com', 'protonmail.com', 'zoho.com'];
+      const emailDomain = corporateWorkEmail.split('@')[1]?.toLowerCase() || '';
+      if (genericDomains.includes(emailDomain)) {
+        setError("Please use your official company/corporate email domain, or select 'Prove with employment document'.");
+        return false;
+      }
+      if (!isCorporateEmailVerified) {
+        if (!corporateCodeSent) {
+          handleSendCorporateCode();
+          setError("A 6-digit verification code has been dispatched to your corporate email. Please enter the code and click 'Verify Code' before proceeding to Step 3.");
+        } else {
+          setError("Please verify your corporate email with the 6-digit verification code before proceeding to Step 3.");
+        }
+        return false;
+      }
+    } else if (verificationMethod === 'employment_document') {
+      if (!employmentDocumentUrl.trim()) {
+        setError("Please upload your proof of employment document (PDF, DOCX, PNG, or JPEG).");
+        return false;
+      }
+    }
+    if (!mentorCvUrl.trim()) {
+      setError("CV / Document URL is required.");
       return false;
     }
     if (!mentorBio.trim() || mentorBio.trim().length < 20) {
@@ -428,7 +578,12 @@ export function Auth({ onSignIn }: AuthProps) {
   const [studentVerificationCode, setStudentVerificationCode] = useState<string>('');
   const [userEnteredCode, setUserEnteredCode] = useState<string>('');
   const [verificationError, setVerificationError] = useState<string | null>(null);
+  const [verificationSuccessNotice, setVerificationSuccessNotice] = useState<string | null>(null);
   const [verificationSending, setVerificationSending] = useState<boolean>(false);
+  const [showEmailConfigModal, setShowEmailConfigModal] = useState<boolean>(false);
+  const [emailServiceIdInput, setEmailServiceIdInput] = useState<string>(() => getEmailJsConfig().serviceId);
+  const [emailTemplateIdInput, setEmailTemplateIdInput] = useState<string>(() => getEmailJsConfig().templateId);
+  const [emailPublicKeyInput, setEmailPublicKeyInput] = useState<string>(() => getEmailJsConfig().publicKey);
 
   const validateStudentStep1 = (): boolean => {
     setError(null);
@@ -501,6 +656,7 @@ export function Auth({ onSignIn }: AuthProps) {
     setVerificationSending(true);
     setError(null);
     setVerificationError(null);
+    setUserEnteredCode('');
 
     // Generate 6-digit random security code
     const generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
@@ -510,33 +666,79 @@ export function Auth({ onSignIn }: AuthProps) {
     const directLink = `${window.location.origin}?verify_code=${generatedCode}&verify_email=${encodeURIComponent(emailLower)}`;
 
     try {
-      await sendStudentVerificationEmail({
+      const result = await sendStudentVerificationEmail({
         studentName: name.trim(),
         studentEmail: emailLower,
         verificationCode: generatedCode,
         verificationLink: directLink
       });
+
+      if (!result.success) {
+        setVerificationError(`Failed to send verification email: ${result.message}. Please check your email or click resend.`);
+      }
       setStudentVerificationPending(true);
     } catch (err: any) {
       console.warn("Verification email notice:", err);
+      setVerificationError("Could not dispatch verification email. Please check your internet connection or click Resend.");
       setStudentVerificationPending(true);
     } finally {
       setVerificationSending(false);
     }
   };
 
-  // Complete student registration once 2-Step Security is confirmed ("YES, IT'S ME" or code match)
-  const handleCompleteStudentRegistration = async (overrideCode?: string) => {
-    const codeToVerify = (overrideCode || userEnteredCode).trim();
+  // Resend verification code to student email
+  const handleResendStudentVerification = async () => {
+    setVerificationSending(true);
+    setVerificationError(null);
+    setUserEnteredCode('');
+
+    const newCode = Math.floor(100000 + Math.random() * 900000).toString();
+    setStudentVerificationCode(newCode);
+
+    const emailLower = email.trim().toLowerCase();
+    const directLink = `${window.location.origin}?verify_code=${newCode}&verify_email=${encodeURIComponent(emailLower)}`;
+
+    try {
+      const result = await sendStudentVerificationEmail({
+        studentName: name.trim(),
+        studentEmail: emailLower,
+        verificationCode: newCode,
+        verificationLink: directLink
+      });
+      if (!result.success) {
+        setVerificationError(`Failed to resend email: ${result.message}`);
+      } else {
+        setVerificationSuccessNotice(`New 6-digit code has been dispatched to ${emailLower}! Please check your inbox or spam.`);
+        setTimeout(() => setVerificationSuccessNotice(null), 7000);
+      }
+    } catch (err: any) {
+      setVerificationError("Failed to resend verification email. Please try again.");
+    } finally {
+      setVerificationSending(false);
+    }
+  };
+
+  // Complete student registration once 2-Step Security is confirmed with code matching the email
+  const handleCompleteStudentRegistration = async () => {
+    const codeToVerify = userEnteredCode.trim();
+    if (!codeToVerify) {
+      setVerificationError("Please enter the 6-digit security code received in your email.");
+      return;
+    }
+
+    if (codeToVerify.length !== 6) {
+      setVerificationError("The security code must be exactly 6 digits.");
+      return;
+    }
+
+    if (codeToVerify !== studentVerificationCode) {
+      setVerificationError("Invalid 6-digit verification code. Please check the code sent to your email inbox or spam folder.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setVerificationError(null);
-
-    if (codeToVerify && codeToVerify !== studentVerificationCode) {
-      setVerificationError("Invalid 2-step verification code. Please check your email or click 'YES, IT'S ME'.");
-      setLoading(false);
-      return;
-    }
 
     try {
       const emailLower = email.trim().toLowerCase();
@@ -670,12 +872,20 @@ export function Auth({ onSignIn }: AuthProps) {
         location: mentorLocation,
         linkedin: mentorLinkedin,
         hourlyRate: mentorRate,
+        verificationMethod,
+        workEmail: verificationMethod === 'corporate_email' ? corporateWorkEmail : '',
+        corporateEmail: verificationMethod === 'corporate_email' ? corporateWorkEmail : '',
+        employmentDocumentUrl: verificationMethod === 'employment_document' ? employmentDocumentUrl : '',
+        employmentDocFileName: verificationMethod === 'employment_document' ? employmentDocFileName : '',
         photo: mentorPhoto || "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200"
       };
 
       // Create main user profile
       const userRef = doc(db, 'users', firebaseUser.uid);
       const isPreApprovedAdmin = mentorEmail === 'ayeshasiddikamoni408@gmail.com';
+      const isCorporateVerified = verificationMethod === 'corporate_email' && isCorporateEmailVerified;
+      const isAutoVerified = isPreApprovedAdmin || isCorporateVerified;
+
       const newProfile = {
         uid: firebaseUser.uid,
         email: mentorEmail,
@@ -695,10 +905,17 @@ export function Auth({ onSignIn }: AuthProps) {
         location: mentorLocation,
         linkedin: mentorLinkedin,
         hourlyRate: mentorRate,
+        verificationMethod,
+        workEmail: verificationMethod === 'corporate_email' ? corporateWorkEmail : '',
+        corporateEmail: verificationMethod === 'corporate_email' ? corporateWorkEmail : '',
+        corporateEmailVerified: isCorporateVerified,
+        employmentDocumentUrl: verificationMethod === 'employment_document' ? employmentDocumentUrl : '',
+        employmentDocFileName: verificationMethod === 'employment_document' ? employmentDocFileName : '',
         photo: mentorPhoto || "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200",
         cvUrl: mentorCvUrl || '',
-        verified: isPreApprovedAdmin,
-        verificationStatus: isPreApprovedAdmin ? 'verified' : 'pending',
+        verified: isAutoVerified,
+        verificationStatus: isAutoVerified ? 'verified' : 'pending',
+        security2StepVerified: isAutoVerified,
         createdAt: new Date().toISOString(),
       };
       await withTimeout(setDoc(userRef, newProfile), 6000, "Registration timed out (network issue or server unavailable). Please try again.");
@@ -717,12 +934,19 @@ export function Auth({ onSignIn }: AuthProps) {
         available: true,
         experience: mentorExperience || '5-8 Years',
         responseTime: '< 12h',
-        verified: isPreApprovedAdmin,
+        verified: isAutoVerified,
+        verificationStatus: isAutoVerified ? 'verified' : 'pending',
+        corporateEmailVerified: isCorporateVerified,
         image: mentorPhoto || "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200",
         logo: "https://www.gstatic.com/images/branding/product/2x/googleg_96dp.png",
         location: mentorLocation,
         linkedin: mentorLinkedin,
         hourlyRate: mentorRate,
+        verificationMethod,
+        workEmail: verificationMethod === 'corporate_email' ? corporateWorkEmail : '',
+        corporateEmail: verificationMethod === 'corporate_email' ? corporateWorkEmail : '',
+        employmentDocumentUrl: verificationMethod === 'employment_document' ? employmentDocumentUrl : '',
+        employmentDocFileName: verificationMethod === 'employment_document' ? employmentDocFileName : '',
         cvUrl: mentorCvUrl || '',
       }), 6000, "Profile setup timed out. Please try again.");
 
@@ -733,8 +957,10 @@ export function Auth({ onSignIn }: AuthProps) {
           userName: fullName,
           userRole: 'mentor',
           userEmail: mentorEmail,
-          message: `"${fullName}" wants to join as a Mentor`,
-          status: 'pending',
+          message: isAutoVerified
+            ? `"${fullName}" auto-registered as Mentor (Corporate Email Verified: ${corporateWorkEmail} at ${mentorCompany})`
+            : `"${fullName}" submitted employment documents to join as Mentor (Pending Admin Review)`,
+          status: isAutoVerified ? 'verified' : 'pending',
           createdAt: new Date().toISOString(),
           profile: {
             ...newProfile,
@@ -743,16 +969,20 @@ export function Auth({ onSignIn }: AuthProps) {
         }), 6000, "Administrative submission timed out. Please try again.");
       }
 
-      if (!isPreApprovedAdmin) {
-        // Log out immediately so the session does not auto-gate before profile is approved
-        await logout();
-        setShowPendingSuccess(true);
-      } else {
+      if (isAutoVerified) {
+        // Auto-verified: Keep session active and launch mentor workspace directly!
         sessionStorage.removeItem('is_signing_up_special_role');
-        setSuccess('Pre-approved administrator, launching workspace...');
+        setSuccess(isPreApprovedAdmin 
+          ? 'Pre-approved administrator, launching workspace...' 
+          : 'Corporate email verified! Mentor registration completed with direct access. Launching workspace...'
+        );
         setTimeout(() => {
           window.location.reload();
-        }, 1500);
+        }, 1400);
+      } else {
+        // Submitted documents: Log out immediately so the session does not auto-gate before profile is approved
+        await logout();
+        setShowPendingSuccess(true);
       }
     } catch (err: any) {
       sessionStorage.removeItem('is_signing_up_special_role');
@@ -1012,11 +1242,11 @@ export function Auth({ onSignIn }: AuthProps) {
                 </h1>
                 
                 <p className="text-text-muted text-[15px] leading-relaxed max-w-md mx-auto font-light">
-                  Thank you for registering! Your application credentials have been successfully transmitted to the system administration team and are currently under active vetting.
+                  Thank you for registering! Your application credentials and employment proof have been submitted and are currently in pause until administration verifies your documents.
                 </p>
                 
                 <p className="text-text-muted-foreground text-xs leading-relaxed max-w-md mx-auto">
-                  Once the admin endorses your credentials, you will receive a verification completion email and can instantly log in to unleash your full platform workspace panel!
+                  Once the administration team reviews and approves your submission, your account will be activated and you can directly log in to access your full workspace!
                 </p>
               </div>
 
@@ -1887,20 +2117,229 @@ export function Auth({ onSignIn }: AuthProps) {
                               </div>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                              <label className="text-[11px] font-mono font-semibold text-slate-500 tracking-wider uppercase">YEARS OF EXPERIENCE</label>
+                              <select value={mentorExperience} onChange={(e) => setMentorExperience(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 outline-none focus:bg-white focus:border-blue-600">
+                                <option value="1-2 Years">1-2 Years</option>
+                                <option value="3-5 Years">3-5 Years</option>
+                                <option value="5-8 Years">5-8 Years</option>
+                                <option value="8+ Years">8+ Years</option>
+                              </select>
+                            </div>
+
+                            {/* Prove Your Employment Section */}
+                            <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/90 space-y-3.5">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <ShieldCheck className="w-4 h-4 text-blue-600" />
+                                  <label className="text-[11px] font-mono font-bold text-slate-700 tracking-wider uppercase">
+                                    PROVE YOUR EMPLOYMENT
+                                  </label>
+                                </div>
+                                <span className="text-[10px] font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
+                                  Authenticity Verification
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-500 leading-relaxed">
+                                To protect students and ensure all mentors are real industry professionals, please verify your corporate standing.
+                              </p>
+
+                              {/* Method Dropdown */}
                               <div className="space-y-1.5">
-                                <label className="text-[11px] font-mono font-semibold text-slate-500 tracking-wider uppercase">YEARS OF EXPERIENCE</label>
-                                <select value={mentorExperience} onChange={(e) => setMentorExperience(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 outline-none focus:bg-white focus:border-blue-600">
-                                  <option value="1-2 Years">1-2 Years</option>
-                                  <option value="3-5 Years">3-5 Years</option>
-                                  <option value="5-8 Years">5-8 Years</option>
-                                  <option value="8+ Years">8+ Years</option>
+                                <label className="text-[10px] font-mono font-semibold text-slate-500 tracking-wider uppercase">
+                                  VERIFICATION METHOD
+                                </label>
+                                <select 
+                                  value={verificationMethod} 
+                                  onChange={(e) => setVerificationMethod(e.target.value as 'corporate_email' | 'employment_document')}
+                                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 outline-none focus:border-blue-600 transition-colors cursor-pointer"
+                                >
+                                  <option value="corporate_email">Prove with corporate email</option>
+                                  <option value="employment_document">Prove with employment document</option>
                                 </select>
                               </div>
-                              <div className="space-y-1.5">
-                                <label className="text-[11px] font-mono font-semibold text-slate-500 tracking-wider uppercase">HOURLY RATE (USD)</label>
-                                <input type="number" required value={mentorRate} onChange={(e) => setMentorRate(e.target.value)} placeholder="50" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none text-slate-900 focus:bg-white focus:border-blue-600" />
-                              </div>
+
+                              {/* Conditional Verification Inputs */}
+                              {verificationMethod === 'corporate_email' ? (
+                                <div className="space-y-3 pt-1">
+                                  {isCorporateEmailVerified ? (
+                                    /* Verified Card */
+                                    <div className="p-4 bg-emerald-50 border border-emerald-200/90 rounded-xl space-y-2">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                                          <span className="text-xs font-bold text-emerald-800">Corporate Email Verified</span>
+                                        </div>
+                                        <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-300">
+                                          Instant Approval Active
+                                        </span>
+                                      </div>
+                                      <p className="text-xs font-mono text-emerald-900 break-all">
+                                        {corporateWorkEmail}
+                                      </p>
+                                      <p className="text-[11px] text-emerald-700 leading-relaxed">
+                                        Your corporate standing is authenticated. You will bypass manual admin confirmation and can log in directly upon completing signup!
+                                      </p>
+                                      <div className="pt-1">
+                                        <button
+                                          type="button"
+                                          onClick={handleResetCorporateEmail}
+                                          className="text-[11px] text-emerald-700 hover:text-emerald-900 underline font-medium cursor-pointer"
+                                        >
+                                          Change / Re-verify corporate email
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    /* Input + Send verification code */
+                                    <div className="space-y-2.5">
+                                      <div className="space-y-1.5">
+                                        <label className="text-[10px] font-mono font-semibold text-slate-500 tracking-wider uppercase flex items-center gap-1.5">
+                                          <Mail className="w-3.5 h-3.5 text-blue-600" /> CORPORATE / WORK EMAIL
+                                        </label>
+                                        <div className="flex flex-col sm:flex-row gap-2">
+                                          <input 
+                                            type="email" 
+                                            required 
+                                            value={corporateWorkEmail} 
+                                            onChange={(e) => {
+                                              setCorporateWorkEmail(e.target.value);
+                                              if (corporateCodeSent) {
+                                                setCorporateCodeSent(false);
+                                                setCorporateVerificationSuccess(null);
+                                                setCorporateVerificationError(null);
+                                              }
+                                            }} 
+                                            placeholder="e.g. name@company.com (not personal gmail)" 
+                                            className="flex-1 px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm outline-none text-slate-900 focus:border-blue-600 transition-colors" 
+                                          />
+                                          <button
+                                            type="button"
+                                            onClick={handleSendCorporateCode}
+                                            disabled={corporateVerificationSending || !corporateWorkEmail.trim()}
+                                            className="px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5 shrink-0 cursor-pointer shadow-sm"
+                                          >
+                                            {corporateVerificationSending ? (
+                                              <>
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                <span>Sending...</span>
+                                              </>
+                                            ) : corporateCodeSent ? (
+                                              <>
+                                                <Mail className="w-3.5 h-3.5" />
+                                                <span>Resend Code</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <Zap className="w-3.5 h-3.5" />
+                                                <span>Verify Email</span>
+                                              </>
+                                            )}
+                                          </button>
+                                        </div>
+                                        <p className="text-[10px] text-slate-400">
+                                          Must use your active company domain. A 6-digit security code will be sent to verify your corporate identity.
+                                        </p>
+                                      </div>
+
+                                      {/* Code Verification Box */}
+                                      {corporateCodeSent && (
+                                        <motion.div
+                                          initial={{ opacity: 0, y: -6 }}
+                                          animate={{ opacity: 1, y: 0 }}
+                                          className="p-3.5 bg-blue-50/70 border border-blue-200 rounded-xl space-y-3"
+                                        >
+                                          <div className="flex items-center justify-between">
+                                            <span className="text-[11px] font-bold text-blue-900 flex items-center gap-1.5">
+                                              <Lock className="w-3.5 h-3.5 text-blue-600" /> Enter 6-Digit Code
+                                            </span>
+                                            <span className="text-[10px] font-mono text-blue-700 truncate max-w-[180px]">
+                                              Sent to {corporateWorkEmail}
+                                            </span>
+                                          </div>
+
+                                          <div className="flex gap-2">
+                                            <input
+                                              type="text"
+                                              maxLength={6}
+                                              value={userEnteredCorporateCode}
+                                              onChange={(e) => setUserEnteredCorporateCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                              onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                  e.preventDefault();
+                                                  handleVerifyCorporateCode();
+                                                }
+                                              }}
+                                              placeholder="123456"
+                                              className="flex-1 px-3 py-2.5 bg-white border border-blue-200 rounded-lg text-center font-mono font-bold text-base tracking-[0.3em] text-slate-900 outline-none focus:border-blue-600 shadow-inner"
+                                            />
+                                            <button
+                                              type="button"
+                                              onClick={handleVerifyCorporateCode}
+                                              disabled={corporateVerificationVerifying || userEnteredCorporateCode.length < 6}
+                                              className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-95 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+                                            >
+                                              {corporateVerificationVerifying ? (
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                              ) : (
+                                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                              )}
+                                              <span>Confirm</span>
+                                            </button>
+                                          </div>
+
+                                          {corporateVerificationError && (
+                                            <p className="text-[11px] text-red-600 font-medium flex items-center gap-1">
+                                              <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {corporateVerificationError}
+                                            </p>
+                                          )}
+
+                                          {corporateVerificationSuccess && (
+                                            <p className="text-[11px] text-emerald-700 font-medium flex items-center gap-1">
+                                              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" /> {corporateVerificationSuccess}
+                                            </p>
+                                          )}
+
+                                          <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-blue-100">
+                                            <span>Didn't receive email? Check spam folder or</span>
+                                            <button
+                                              type="button"
+                                              onClick={handleSendCorporateCode}
+                                              disabled={corporateVerificationSending}
+                                              className="text-blue-600 font-semibold hover:underline cursor-pointer"
+                                            >
+                                              Click to resend
+                                            </button>
+                                          </div>
+                                        </motion.div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="space-y-1.5 pt-1">
+                                  <label className="text-[10px] font-mono font-semibold text-slate-500 tracking-wider uppercase flex items-center gap-1.5">
+                                    <FileUp className="w-3.5 h-3.5 text-blue-600" /> EMPLOYMENT DOCUMENT (PDF, DOCX, PNG, JPEG)
+                                  </label>
+                                  <div className="relative">
+                                    <input 
+                                      type="file" 
+                                      accept=".pdf,.docx,.png,.jpeg,.jpg"
+                                      onChange={handleEmploymentDocUpload}
+                                      className="block w-full text-xs text-slate-500 file:mr-3 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer bg-white border border-slate-200 rounded-xl p-2"
+                                    />
+                                  </div>
+                                  {employmentDocFileName ? (
+                                    <p className="text-[11px] text-emerald-600 flex items-center gap-1 mt-1 font-medium">
+                                      <CheckCircle2 className="w-3.5 h-3.5" /> Attached: {employmentDocFileName}
+                                    </p>
+                                  ) : (
+                                    <p className="text-[10px] text-slate-400">
+                                      Upload employee badge, offer letter, or work contract proof (Max 5MB). Admin review required before access.
+                                    </p>
+                                  )}
+                                </div>
+                              )}
                             </div>
 
                             <div className="space-y-1.5">
@@ -2042,6 +2481,23 @@ export function Auth({ onSignIn }: AuthProps) {
                               ))}
                             </div>
 
+                            {/* Verification Summary Banner */}
+                            {verificationMethod === 'corporate_email' && isCorporateEmailVerified ? (
+                              <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2.5 text-emerald-800 text-xs font-medium">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                <span>
+                                  <strong>Instant Direct Access Active:</strong> Corporate email ({corporateWorkEmail}) verified! Your mentor registration will complete immediately with no admin wait.
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2.5 text-amber-800 text-xs font-medium">
+                                <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                                <span>
+                                  <strong>Admin Vetting Required:</strong> Employment proof will be placed in pause for administrator review before your mentor workspace is unlocked.
+                                </span>
+                              </div>
+                            )}
+
                             <div className="flex gap-3 pt-2">
                               <button 
                                 type="button" 
@@ -2056,7 +2512,15 @@ export function Auth({ onSignIn }: AuthProps) {
                                 id="mentor-signup-submit-btn"
                                 className="flex-1 py-4 bg-gradient-to-r from-[#090979] to-[#00D4FF] hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold text-sm tracking-wide transition-all shadow-md shadow-blue-500/20 cursor-pointer"
                               >
-                                {loading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : <>Submit Application</>}
+                                {loading ? (
+                                  <Loader2 className="w-5 h-5 animate-spin mx-auto" />
+                                ) : verificationMethod === 'corporate_email' && isCorporateEmailVerified ? (
+                                  <span className="flex items-center justify-center gap-2">
+                                    <Sparkles className="w-4 h-4" /> Complete & Launch Workspace
+                                  </span>
+                                ) : (
+                                  <>Submit Application for Review</>
+                                )}
                               </button>
                             </div>
                           </div>
@@ -2658,19 +3122,19 @@ export function Auth({ onSignIn }: AuthProps) {
                   </div>
 
                   <div className="space-y-1">
-                    <h3 className="text-xl font-bold text-text-primary tracking-tight">Verify it's you</h3>
+                    <h3 className="text-xl font-bold text-text-primary tracking-tight">Enter Email Security Code</h3>
                     <p className="text-xs font-medium text-text-muted">
-                      A validation message was sent via <span className="font-bold text-primary">EmailJS</span> to auto-verify your student profile.
+                      We sent a 6-digit security verification code to your email. Please check your inbox or spam folder.
                     </p>
                   </div>
 
-                  <div className="p-3.5 bg-bg-secondary/80 border border-border rounded-xl text-left space-y-1.5 shadow-sm">
+                  <div className="p-3.5 bg-bg-secondary/80 border border-border rounded-xl text-left space-y-1 shadow-sm">
                     <div className="flex items-center gap-2 text-xs font-semibold text-text-primary">
                       <Mail className="w-4 h-4 text-primary shrink-0" />
-                      <span className="truncate">{email}</span>
+                      <span className="truncate font-mono">{email}</span>
                     </div>
-                    <p className="text-[11px] text-text-muted leading-relaxed">
-                      Please confirm identity below or enter the security code sent to your inbox to complete student registration.
+                    <p className="text-[11px] text-text-muted">
+                      Enter the 6-digit code below to verify your email address and activate your student account.
                     </p>
                   </div>
 
@@ -2681,65 +3145,156 @@ export function Auth({ onSignIn }: AuthProps) {
                     </div>
                   )}
 
-                  <div className="space-y-3 pt-1">
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        onClick={() => handleCompleteStudentRegistration(studentVerificationCode)}
-                        disabled={loading}
-                        className="py-3 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                      >
-                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><CheckCircle2 className="w-4 h-4" /> YES, IT'S ME</>}
-                      </button>
+                  {verificationSuccessNotice && (
+                    <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 rounded-xl text-xs font-semibold flex items-center gap-2 text-left">
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                      {verificationSuccessNotice}
+                    </div>
+                  )}
 
+                  <form 
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleCompleteStudentRegistration();
+                    }}
+                    className="space-y-4 pt-1 text-left"
+                  >
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-mono font-bold text-text-muted uppercase tracking-wider block">
+                        6-Digit Security Code
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        maxLength={6}
+                        required
+                        autoFocus
+                        value={userEnteredCode}
+                        onChange={(e) => setUserEnteredCode(e.target.value.replace(/\D/g, ''))}
+                        placeholder="• • • • • •"
+                        className="w-full py-3.5 px-4 bg-bg-secondary border-2 border-border focus:border-primary rounded-xl text-center font-mono font-bold text-2xl tracking-[0.4em] outline-none shadow-inner text-text-primary transition-all placeholder:tracking-normal placeholder:text-base placeholder:font-sans placeholder:text-text-muted/40"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={loading || userEnteredCode.length !== 6}
+                      className="w-full py-3 px-4 bg-primary hover:bg-primary/90 text-white font-bold text-sm rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Verifying Code...</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>Verify & Create Account</span>
+                        </>
+                      )}
+                    </button>
+
+                    <div className="flex items-center justify-between pt-2 text-xs border-t border-border/40">
                       <button
                         type="button"
                         onClick={() => {
                           setStudentVerificationPending(false);
                           setVerificationError(null);
                         }}
-                        className="py-3 px-3 border border-border hover:bg-bg-tertiary text-text-secondary font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer"
+                        className="text-text-muted hover:text-text-primary transition-colors cursor-pointer"
                       >
-                        <X className="w-4 h-4" /> NO, NOT ME
+                        Change Email / Go Back
                       </button>
-                    </div>
 
-                    <div className="pt-2 border-t border-border/50 text-left space-y-2">
-                      <label className="text-[11px] font-semibold text-text-secondary ml-0.5">Or enter 6-digit EmailJS security code:</label>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          maxLength={6}
-                          value={userEnteredCode}
-                          onChange={(e) => setUserEnteredCode(e.target.value.replace(/\D/g, ''))}
-                          placeholder="Code from email"
-                          className="flex-1 px-3 py-2.5 bg-bg-secondary border border-border rounded-xl text-center font-mono font-bold text-sm tracking-widest outline-none focus:border-primary shadow-inner"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleCompleteStudentRegistration()}
-                          disabled={loading || userEnteredCode.length !== 6}
-                          className="px-4 py-2 bg-primary text-white font-bold text-xs rounded-xl shadow transition-all cursor-pointer disabled:opacity-40"
-                        >
-                          Verify
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="p-2.5 bg-bg-secondary/60 rounded-xl flex items-center justify-between text-[11px] border border-border/40">
-                      <span className="text-text-muted">Security Code: <span className="font-mono font-bold text-primary">{studentVerificationCode}</span></span>
                       <button
                         type="button"
-                        onClick={() => {
-                          setUserEnteredCode(studentVerificationCode);
-                          handleCompleteStudentRegistration(studentVerificationCode);
-                        }}
-                        className="text-primary hover:underline font-bold cursor-pointer"
+                        disabled={verificationSending}
+                        onClick={handleResendStudentVerification}
+                        className="text-primary hover:underline font-semibold cursor-pointer disabled:opacity-50 flex items-center gap-1"
                       >
-                        Auto-Fill & Verify
+                        {verificationSending ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                        <span>Resend Code</span>
                       </button>
                     </div>
-                  </div>
+
+                    {/* EmailJS Credentials Quick Check */}
+                    <div className="pt-2 border-t border-border/30 text-center">
+                      <button
+                        type="button"
+                        onClick={() => setShowEmailConfigModal(!showEmailConfigModal)}
+                        className="text-[11px] text-text-muted hover:text-primary transition-colors flex items-center justify-center gap-1 mx-auto cursor-pointer"
+                      >
+                        <span>⚙️ EmailJS Service Settings</span>
+                        <ChevronDown className={`w-3 h-3 transition-transform ${showEmailConfigModal ? 'rotate-180' : ''}`} />
+                      </button>
+
+                      {showEmailConfigModal && (
+                        <div className="mt-2.5 p-3 bg-bg-secondary/90 border border-border rounded-xl text-left space-y-2 text-xs">
+                          <p className="text-[11px] text-text-muted">
+                            If your service ID or public key changes, you can update it right here without modifying code:
+                          </p>
+                          <div>
+                            <label className="text-[10px] font-bold text-text-muted uppercase">Service ID</label>
+                            <input
+                              type="text"
+                              value={emailServiceIdInput}
+                              onChange={(e) => setEmailServiceIdInput(e.target.value.trim())}
+                              placeholder="e.g. service_9w5waba"
+                              className="w-full px-2.5 py-1.5 bg-bg-primary border border-border rounded-lg text-xs font-mono text-text-primary outline-none focus:border-primary"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-text-muted uppercase">Template ID</label>
+                            <input
+                              type="text"
+                              value={emailTemplateIdInput}
+                              onChange={(e) => setEmailTemplateIdInput(e.target.value.trim())}
+                              placeholder="e.g. template_8rzmow8"
+                              className="w-full px-2.5 py-1.5 bg-bg-primary border border-border rounded-lg text-xs font-mono text-text-primary outline-none focus:border-primary"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-text-muted uppercase">Public Key</label>
+                            <input
+                              type="text"
+                              value={emailPublicKeyInput}
+                              onChange={(e) => setEmailPublicKeyInput(e.target.value.trim())}
+                              placeholder="e.g. yiUQrPN9ZiXdhz3bl"
+                              className="w-full px-2.5 py-1.5 bg-bg-primary border border-border rounded-lg text-xs font-mono text-text-primary outline-none focus:border-primary"
+                            />
+                          </div>
+                          <div className="flex gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                saveEmailJsConfig(emailServiceIdInput, emailTemplateIdInput, emailPublicKeyInput);
+                                setVerificationSuccessNotice("EmailJS credentials updated! Click 'Resend Code' now.");
+                                setShowEmailConfigModal(false);
+                              }}
+                              className="flex-1 py-1.5 bg-primary text-white font-bold text-xs rounded-lg shadow cursor-pointer hover:bg-primary/90 transition-colors"
+                            >
+                              Save Settings
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                resetEmailJsConfigToDefault();
+                                setEmailServiceIdInput('service_9w5waba');
+                                setEmailTemplateIdInput('template_8rzmow8');
+                                setEmailPublicKeyInput('yiUQrPN9ZiXdhz3bl');
+                                setVerificationSuccessNotice("Reset to defaults (service_9w5waba / template_8rzmow8). Click 'Resend Code' now.");
+                                setShowEmailConfigModal(false);
+                              }}
+                              className="px-2 py-1.5 bg-bg-primary border border-border text-text-muted hover:text-text-primary text-xs rounded-lg cursor-pointer"
+                            >
+                              Reset
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </form>
                 </div>
               ) : (
                 <>
