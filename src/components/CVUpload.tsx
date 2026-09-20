@@ -706,10 +706,11 @@ export function CVUpload({ setView, onComplete }: { setView: (view: any) => void
           }
         }, 3000);
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error("CV Analysis caught error:", err);
       handleFirestoreError(err, OperationType.WRITE, 'users');
-      setError('Failed to analyze CV. Please try again.');
+      const errDetail = err?.message ? ` (${err.message})` : '';
+      setError(`Failed to analyze CV${errDetail}. Please ensure your API key is configured or paste CV text directly.`);
     } finally {
       setAnalyzing(false);
     }
