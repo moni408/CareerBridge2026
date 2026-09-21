@@ -21,6 +21,7 @@ import { calculateJobSkillMatch } from '../lib/jobMatch';
 import { AddSkillModal } from './AddSkillModal';
 import { CompetencyCockpit } from './CompetencyCockpit';
 import { CockpitEmptyState } from './CockpitEmptyState';
+import { subscribeStudentApplications } from '../services/applicationFormService';
 
 interface DashboardProps {
   setView: (view: any) => void;
@@ -133,6 +134,7 @@ export function Dashboard({ setView, currentView }: DashboardProps) {
   const [endorsements, setEndorsements] = useState<any[]>([]);
   const [selectedEndorsementLetter, setSelectedEndorsementLetter] = useState<any | null>(null);
   const [jobsList, setJobsList] = useState<any[]>([]);
+  const [scheduledInterviewsCount, setScheduledInterviewsCount] = useState<number>(0);
 
   // New Skill Modal state
   const [showAddSkillModal, setShowAddSkillModal] = useState(false);
@@ -258,6 +260,21 @@ export function Dashboard({ setView, currentView }: DashboardProps) {
     });
     return () => unsub();
   }, []);
+
+  // Real-time listener for scheduled interviews from industry
+  useEffect(() => {
+    if (!user) {
+      setScheduledInterviewsCount(0);
+      return;
+    }
+    const studentId = user.uid || (user as any).id;
+    const studentEmail = user.email || undefined;
+    const unsub = subscribeStudentApplications(studentId, studentEmail, (apps) => {
+      const interviewApps = apps.filter(a => !a.withdrawn && (a.status === 'Interview' || Boolean(a.interviewDetails)));
+      setScheduledInterviewsCount(interviewApps.length);
+    });
+    return () => unsub();
+  }, [user]);
 
   const userSkillsForMatch = useMemo(() => {
     const rawUserSkills = [
@@ -682,13 +699,28 @@ export function Dashboard({ setView, currentView }: DashboardProps) {
               </span>
             </div>
 
-            {/* Interviews */}
-            <div className="py-2 sm:py-0 sm:px-4 flex flex-col justify-center">
-              <span className="text-[30px] font-semibold tabular-nums text-[#00D4FF] leading-none">
-                {profile?.interviews ?? profile?.interviewsScheduled ?? 4}
-              </span>
-              <span className="text-[12px] uppercase tracking-wider font-medium text-[#8A99B5] mt-1">
-                Interviews
+            {/* Real-time Interviews Status */}
+            <div 
+              onClick={() => setView('my-applications')}
+              className="py-2 sm:py-0 sm:px-4 flex flex-col justify-center cursor-pointer group"
+              title="Click to view your scheduled interviews and application updates"
+            >
+              <div className="flex items-center gap-1.5">
+                <span className="text-[30px] font-semibold tabular-nums text-[#00D4FF] leading-none group-hover:scale-105 transition-transform">
+                  {scheduledInterviewsCount}
+                </span>
+                {scheduledInterviewsCount > 0 && (
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                  </span>
+                )}
+              </div>
+              <span className="text-[12px] uppercase tracking-wider font-medium text-[#8A99B5] mt-1 group-hover:text-[#00D4FF] transition-colors flex items-center gap-1">
+                {scheduledInterviewsCount === 1 ? 'Interview' : 'Interviews'}
+                {scheduledInterviewsCount > 0 && (
+                  <span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-1 py-0.5 rounded">Live</span>
+                )}
               </span>
             </div>
           </div>

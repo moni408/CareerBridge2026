@@ -133,11 +133,15 @@ export function Layout({ children, currentView, setView, searchQuery, setSearchQ
     };
 
     window.addEventListener('job-application-submitted', handleAppSubmitted);
+    window.addEventListener('interview-scheduled', handleAppSubmitted);
+    window.addEventListener('job-application-updated', handleAppSubmitted);
     window.addEventListener('storage', handleAppSubmitted);
 
     return () => {
       active = false;
       window.removeEventListener('job-application-submitted', handleAppSubmitted);
+      window.removeEventListener('interview-scheduled', handleAppSubmitted);
+      window.removeEventListener('job-application-updated', handleAppSubmitted);
       window.removeEventListener('storage', handleAppSubmitted);
     };
   }, [user]);

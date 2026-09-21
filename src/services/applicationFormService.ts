@@ -433,9 +433,25 @@ export async function updateApplicationStatus(
         event: `Status changed to ${newStatus}`,
         description: timelineDescription || `Recruiter updated candidate status to ${newStatus}`,
         timestamp: new Date().toISOString(),
-        type: newStatus === 'Shortlisted' ? 'shortlisted' : newStatus === 'Rejected' ? 'rejected' : 'viewed'
+        type: newStatus === 'Shortlisted' ? 'shortlisted' : newStatus === 'Rejected' ? 'rejected' : newStatus === 'Interview' ? 'interview_scheduled' : 'viewed'
       });
       localStorage.setItem(`apps_${jobId}`, JSON.stringify(existing));
+
+      // Also update student personal cache
+      if (studentIdToNotify) {
+        const studentKey = `student_apps_${studentIdToNotify}`;
+        const sRaw = localStorage.getItem(studentKey);
+        if (sRaw) {
+          try {
+            const sApps: JobApplication[] = JSON.parse(sRaw);
+            const sTarget = sApps.find(a => a.id === appId);
+            if (sTarget) {
+              sTarget.status = newStatus;
+              localStorage.setItem(studentKey, JSON.stringify(sApps));
+            }
+          } catch (e) {}
+        }
+      }
     }
   } catch (e) {
     // ignore
@@ -446,6 +462,15 @@ export async function updateApplicationStatus(
     await updateDoc(docRef, updatePayload);
   } catch (err) {
     console.warn("Could not update application in Firestore:", err);
+  }
+
+  // Dispatch local events for real-time reactivity
+  if (typeof window !== 'undefined') {
+    if (newStatus === 'Interview') {
+      window.dispatchEvent(new CustomEvent('interview-scheduled', { detail: { appId, jobId, studentId: studentIdToNotify, status: newStatus } }));
+    }
+    window.dispatchEvent(new CustomEvent('job-application-updated', { detail: { appId, jobId, studentId: studentIdToNotify, status: newStatus } }));
+    window.dispatchEvent(new Event('storage'));
   }
 
   // Dispatch EmailJS Notification to Student regarding status update
@@ -497,6 +522,7 @@ export async function scheduleInterview(appId: string, jobId: string, details: O
   };
 
   // Update localStorage
+  let studentId = '';
   const existingLocalRaw = localStorage.getItem(`apps_${jobId}`) || '[]';
   try {
     const existing: JobApplication[] = JSON.parse(existingLocalRaw);
@@ -504,6 +530,7 @@ export async function scheduleInterview(appId: string, jobId: string, details: O
     if (target) {
       target.status = 'Interview';
       target.interviewDetails = fullDetails;
+      studentId = target.studentId;
       target.timeline.unshift({
         id: `tl-${Date.now()}`,
         event: 'Interview Scheduled',
@@ -512,6 +539,22 @@ export async function scheduleInterview(appId: string, jobId: string, details: O
         type: 'interview_scheduled'
       });
       localStorage.setItem(`apps_${jobId}`, JSON.stringify(existing));
+
+      if (studentId) {
+        const studentKey = `student_apps_${studentId}`;
+        const sRaw = localStorage.getItem(studentKey);
+        if (sRaw) {
+          try {
+            const sApps: JobApplication[] = JSON.parse(sRaw);
+            const sTarget = sApps.find(a => a.id === appId);
+            if (sTarget) {
+              sTarget.status = 'Interview';
+              sTarget.interviewDetails = fullDetails;
+              localStorage.setItem(studentKey, JSON.stringify(sApps));
+            }
+          } catch (e) {}
+        }
+      }
     }
   } catch (e) {
     // ignore
@@ -525,6 +568,13 @@ export async function scheduleInterview(appId: string, jobId: string, details: O
     });
   } catch (err) {
     console.warn("Could not persist interview to Firestore:", err);
+  }
+
+  // Dispatch events for real-time reactivity
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('interview-scheduled', { detail: { appId, jobId, studentId, details: fullDetails } }));
+    window.dispatchEvent(new CustomEvent('job-application-updated', { detail: { appId, jobId, studentId, status: 'Interview' } }));
+    window.dispatchEvent(new Event('storage'));
   }
 
   return fullDetails;
@@ -658,4 +708,114 @@ export async function withdrawApplication(appId: string, jobId: string, studentI
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('job-application-submitted'));
   }
+}
+
+/**
+ * Real-time subscription to student's applications & interviews across Firestore and local storage.
+ */
+export function subscribeStudentApplications(
+  studentId: string,
+  studentEmail: string | undefined,
+  callback: (apps: JobApplication[]) => void
+): () => void {
+  let isSubscribed = true;
+  let currentFirestoreApps: JobApplication[] = [];
+
+  const compileAndNotify = () => {
+    if (!isSubscribed) return;
+
+    const appMap = new Map<string, JobApplication>();
+    currentFirestoreApps.forEach(a => appMap.set(a.id, a));
+
+    // Check student-specific local storage
+    const studentKey = `student_apps_${studentId}`;
+    try {
+      const studentLocalRaw = localStorage.getItem(studentKey);
+      if (studentLocalRaw) {
+        const localApps: JobApplication[] = JSON.parse(studentLocalRaw);
+        localApps.forEach(app => {
+          if (!appMap.has(app.id)) {
+            appMap.set(app.id, app);
+          } else {
+            const existing = appMap.get(app.id)!;
+            if (app.status === 'Interview' || app.interviewDetails) {
+              existing.status = app.status;
+              existing.interviewDetails = app.interviewDetails;
+            }
+          }
+        });
+      }
+    } catch (e) {}
+
+    // Check all apps_ keys in localStorage (for immediate cross-role demo in same browser)
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('apps_') && !key.startsWith('apps_sample')) {
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            const jobApps: JobApplication[] = JSON.parse(raw);
+            jobApps.forEach(app => {
+              const isMatch = (app.studentId === studentId) ||
+                Boolean(studentEmail && app.studentEmail && app.studentEmail.toLowerCase() === studentEmail.toLowerCase());
+              if (isMatch) {
+                if (!appMap.has(app.id)) {
+                  appMap.set(app.id, app);
+                } else {
+                  const existing = appMap.get(app.id)!;
+                  if (app.status === 'Interview' || app.interviewDetails) {
+                    existing.status = app.status;
+                    existing.interviewDetails = app.interviewDetails;
+                  }
+                }
+              }
+            });
+          }
+        }
+      }
+    } catch (e) {}
+
+    const allApps = Array.from(appMap.values()).filter(a => !a.withdrawn);
+    callback(allApps);
+  };
+
+  // Initial notify
+  compileAndNotify();
+
+  // Firestore onSnapshot
+  let unsubFirestore = () => {};
+  try {
+    const q = query(collection(db, APPLICATIONS_COLLECTION), where('studentId', '==', studentId));
+    unsubFirestore = onSnapshot(q, (snapshot) => {
+      currentFirestoreApps = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as JobApplication));
+      compileAndNotify();
+    }, (err) => {
+      console.warn("Firestore listener for student applications error:", err);
+      compileAndNotify();
+    });
+  } catch (err) {
+    console.warn("Could not create Firestore listener:", err);
+  }
+
+  const handleLocalChange = () => {
+    compileAndNotify();
+  };
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('interview-scheduled', handleLocalChange);
+    window.addEventListener('job-application-updated', handleLocalChange);
+    window.addEventListener('job-application-submitted', handleLocalChange);
+    window.addEventListener('storage', handleLocalChange);
+  }
+
+  return () => {
+    isSubscribed = false;
+    unsubFirestore();
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('interview-scheduled', handleLocalChange);
+      window.removeEventListener('job-application-updated', handleLocalChange);
+      window.removeEventListener('job-application-submitted', handleLocalChange);
+      window.removeEventListener('storage', handleLocalChange);
+    }
+  };
 }

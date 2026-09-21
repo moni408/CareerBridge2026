@@ -291,6 +291,25 @@
         "createdAt": { "type": "string" }
       },
       "required": ["sessionId", "industryId", "universityId", "rating", "technicalReview", "createdAt"]
+    },
+    "JobApplication": {
+      "title": "Job Application",
+      "description": "Student job application record with status and interview schedule details.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "jobId": { "type": "string" },
+        "jobTitle": { "type": "string" },
+        "companyName": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "studentEmail": { "type": "string" },
+        "status": { "type": "string", "enum": ["New", "Under Review", "Shortlisted", "Interview", "Offer", "Rejected"] },
+        "interviewDetails": { "type": "object" },
+        "appliedAt": { "type": "string" },
+        "withdrawn": { "type": "boolean" }
+      },
+      "required": ["id", "jobId", "studentId", "status"]
     }
   },
   "firestore": {
@@ -369,6 +388,10 @@
     "/industry_opinions/{opinionId}": {
       "schema": "IndustryOpinion",
       "description": "Joint evaluations, reviews, and dynamic feedback opinions of student cohorts submitted by industry partners."
+    },
+    "/job_applications/{applicationId}": {
+      "schema": "JobApplication",
+      "description": "Student job applications and scheduled interview timeline data."
     }
   }
 }

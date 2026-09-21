@@ -256,6 +256,10 @@ service cloud.firestore {
       allow read, write: if isAuthenticated();
     }
 
+    match /job_applications/{applicationId} {
+      allow read, write: if isAuthenticated();
+    }
+
     match /test/connection {
       allow read: if true;
     }
