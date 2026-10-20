@@ -4,7 +4,7 @@ import { sendCrossRoleEmailNotification } from '../services/emailService';
 import { collection, query, where, onSnapshot, addDoc, serverTimestamp, doc, getDocs, orderBy } from 'firebase/firestore';
 import { 
   Send, Paperclip, Share2, Clipboard, ChevronRight, X, 
-  ExternalLink, File, FileText, Search, User, Globe 
+  ExternalLink, File, FileText, Search, User, Globe, Lock 
 } from 'lucide-react';
 import { useAuth } from '../App';
 
@@ -224,6 +224,7 @@ export function MentorMessagingPage({ activeConnections }: MentorMessagingPagePr
           ) : (
             activeConnections.map((conn) => {
               const isSelected = selectedConnection?.id === conn.id;
+              const isConcluded = conn.status === 'concluded';
               return (
                 <div
                   key={conn.id}
@@ -234,10 +235,16 @@ export function MentorMessagingPage({ activeConnections }: MentorMessagingPagePr
                 >
                   <div>
                     <h4 className="font-bold text-gray-900">{conn.menteeName}</h4>
-                    <p className="text-[10px] text-gray-400 mt-0.5 font-medium truncate max-w-[160px]">Active connection</p>
+                    <p className={`text-[10px] mt-0.5 font-medium truncate max-w-[160px] ${isConcluded ? 'text-amber-600 font-bold' : 'text-gray-400'}`}>
+                      {isConcluded ? 'Concluded (Archived)' : 'Active connection'}
+                    </p>
                   </div>
                   
-                  <span className="w-2 h-2 rounded-full bg-[#10B981] shadow-xs shrink-0" />
+                  {isConcluded ? (
+                    <Lock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                  ) : (
+                    <span className="w-2 h-2 rounded-full bg-[#10B981] shadow-xs shrink-0" />
+                  )}
                 </div>
               );
             })
@@ -424,53 +431,64 @@ export function MentorMessagingPage({ activeConnections }: MentorMessagingPagePr
               <div ref={messagesEndRef} />
             </div>
 
-            {/* INPUT CONTROLLER AREA */}
-            <div className="p-4 border-t-[0.5px] border-border/60 space-y-2 relative bg-white">
-              
-              {/* File Attachment Indicator */}
-              {pendingFile && (
-                <div className="p-2 bg-gray-50 border-[0.5px] border-border/50 rounded flex items-center justify-between text-xs animate-fade-in mb-3">
-                  <div className="flex items-center gap-1.5 text-gray-600">
-                    <File className="w-4 h-4 text-[#534AB7]" />
-                    <span className="font-medium text-[11px]">{pendingFile.name} (Ready to upload)</span>
-                  </div>
-                  <button 
-                    onClick={() => setPendingFile(null)}
-                    className="p-0.5 rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+            {/* INPUT CONTROLLER AREA OR ARCHIVED NOTICE */}
+            {selectedConnection?.status === 'concluded' ? (
+              <div className="p-4 border-t border-border bg-gray-50 text-center space-y-1">
+                <div className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-600 uppercase tracking-wider">
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>Mentorship Concluded • Archived Chat</span>
                 </div>
-              )}
+                <p className="text-[11px] text-gray-500">
+                  New messaging is closed for this mentee. All past conversation messages and attachments are preserved above in read-only mode.
+                </p>
+              </div>
+            ) : (
+              <div className="p-4 border-t-[0.5px] border-border/60 space-y-2 relative bg-white">
+                {/* File Attachment Indicator */}
+                {pendingFile && (
+                  <div className="p-2 bg-gray-50 border-[0.5px] border-border/50 rounded flex items-center justify-between text-xs animate-fade-in mb-3">
+                    <div className="flex items-center gap-1.5 text-gray-600">
+                      <File className="w-4 h-4 text-[#534AB7]" />
+                      <span className="font-medium text-[11px]">{pendingFile.name} (Ready to upload)</span>
+                    </div>
+                    <button 
+                      onClick={() => setPendingFile(null)}
+                      className="p-0.5 rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
 
-              <form onSubmit={handleSendMessage} className="flex gap-2 text-xs">
-                {/* ATTACH BUTTON */}
-                <button
-                  type="button"
-                  onClick={triggerMockFileAttach}
-                  title="Attach mock file"
-                  className="p-2.5 border-[0.5px] border-border rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-500 shrink-0 cursor-pointer"
-                >
-                  <Paperclip className="w-4 h-4 text-gray-500" />
-                </button>
+                <form onSubmit={handleSendMessage} className="flex gap-2 text-xs">
+                  {/* ATTACH BUTTON */}
+                  <button
+                    type="button"
+                    onClick={triggerMockFileAttach}
+                    title="Attach mock file"
+                    className="p-2.5 border-[0.5px] border-border rounded-lg bg-gray-50 hover:bg-gray-100 text-gray-500 shrink-0 cursor-pointer"
+                  >
+                    <Paperclip className="w-4 h-4 text-gray-500" />
+                  </button>
 
-                <input 
-                  type="text" 
-                  value={newMessageText}
-                  onChange={(e) => setNewMessageText(e.target.value)}
-                  placeholder="Type real-time message text... (try typing figma.com or github.com to preview)"
-                  className="flex-1 bg-gray-50 border-[0.5px] border-border rounded-lg p-2.5 focus:outline-none focus:ring-1 focus:ring-primary font-medium"
-                />
+                  <input 
+                    type="text" 
+                    value={newMessageText}
+                    onChange={(e) => setNewMessageText(e.target.value)}
+                    placeholder="Type real-time message text... (try typing figma.com or github.com to preview)"
+                    className="flex-1 bg-gray-50 border-[0.5px] border-border rounded-lg p-2.5 focus:outline-none focus:ring-1 focus:ring-primary font-medium"
+                  />
 
-                <button
-                  type="submit"
-                  disabled={sendingMsg}
-                  className="p-2.5 bg-primary hover:bg-primary-hover text-white rounded-lg shrink-0 cursor-pointer font-bold"
-                >
-                  <Send className="w-4 h-4" />
-                </button>
-              </form>
-            </div>
+                  <button
+                    type="submit"
+                    disabled={sendingMsg}
+                    className="p-2.5 bg-primary hover:bg-primary-hover text-white rounded-lg shrink-0 cursor-pointer font-bold"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </form>
+              </div>
+            )}
           </>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-center space-y-2">

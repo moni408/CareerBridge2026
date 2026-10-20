@@ -664,10 +664,17 @@ export function MentorList({ setView, searchQuery }: { setView: (view: any) => v
 
                 {(() => {
                   const isMentorProfile = profile?.role === 'mentor';
-                  const existingConnection = myConnections.find(c => c.mentorId === mentor.uid || c.menteeId === mentor.uid);
+                  // Only active (non-concluded) connections count as current active connection
+                  const activeConnection = myConnections.find(
+                    c => (c.mentorId === mentor.uid || c.menteeId === mentor.uid) && c.status !== 'concluded'
+                  );
+                  // Concluded past connections
+                  const pastConcluded = myConnections.find(
+                    c => (c.mentorId === mentor.uid || c.menteeId === mentor.uid) && c.status === 'concluded'
+                  );
                   const existingRequest = myRequests.find(r => r.mentorId === mentor.uid && r.status === 'pending');
 
-                  if (existingConnection) {
+                  if (activeConnection) {
                     return (
                       <button
                         onClick={() => setView('chat')}
@@ -697,18 +704,25 @@ export function MentorList({ setView, searchQuery }: { setView: (view: any) => v
                     );
                   }
                   return (
-                    <button
-                      onClick={() => setSelectedMentor(mentor)}
-                      disabled={isMentorProfile}
-                      className="btn-primary w-full group flex items-center justify-center gap-2 py-2.5 text-xs"
-                    >
-                      {isMentorProfile ? 'MENTOR ROLE ACTIVE' : (
-                        <>
-                          CONNECT NOW
-                          <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                        </>
+                    <div className="flex flex-col gap-1.5 w-full">
+                      {pastConcluded && !isMentorProfile && (
+                        <span className="text-[9px] font-bold text-center text-text-muted uppercase tracking-wider bg-bg-tertiary/80 py-1 px-2 rounded-lg border border-border">
+                          ✓ Past Mentorship Concluded • Eligible to Re-enroll
+                        </span>
                       )}
-                    </button>
+                      <button
+                        onClick={() => setSelectedMentor(mentor)}
+                        disabled={isMentorProfile}
+                        className="btn-primary w-full group flex items-center justify-center gap-2 py-2.5 text-xs"
+                      >
+                        {isMentorProfile ? 'MENTOR ROLE ACTIVE' : (
+                          <>
+                            {pastConcluded ? 'REQUEST MENTORSHIP AGAIN' : 'CONNECT NOW'}
+                            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                          </>
+                        )}
+                      </button>
+                    </div>
                   );
                 })()}
               </div>

@@ -75,6 +75,11 @@ export function MentorshipSpace() {
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [sidebarFilter, setSidebarFilter] = useState<'all' | 'active' | 'concluded'>('all');
+  const [sidebarSearch, setSidebarSearch] = useState('');
+  
+  // Status of currently selected connection
+  const isConcluded = selectedConn?.status === 'concluded';
   
   // Custom workspace/tasks & sessions states
   const [activeSubTab, setActiveSubTab] = useState<'learning_module' | 'chat' | 'tasks' | 'sessions'>('learning_module');
@@ -306,7 +311,13 @@ export function MentorshipSpace() {
       setConnections(list);
       setLoading(false);
       if (list.length > 0 && !selectedConn) {
-        setSelectedConn(list[0]);
+        const activeOne = list.find((c: any) => c.status !== 'concluded');
+        setSelectedConn(activeOne || list[0]);
+      } else if (selectedConn) {
+        const updated = list.find((c: any) => c.id === selectedConn.id) as any;
+        if (updated && updated.status !== selectedConn.status) {
+          setSelectedConn(updated);
+        }
       }
     });
 
@@ -477,8 +488,14 @@ export function MentorshipSpace() {
     try {
       const connId = selectedConn.id;
       setShowCancelConfirm(false);
-      setSelectedConn(null);
-      await deleteDoc(doc(db, 'mentorship_connections', connId));
+      // Conclude connection to preserve full chat, session, and milestone history!
+      await updateDoc(doc(db, 'mentorship_connections', connId), {
+        status: 'concluded',
+        concludedAt: new Date().toISOString(),
+        concludedBy: user?.uid,
+        concludedByName: profile?.displayName || 'User'
+      });
+      setSelectedConn((prev: any) => prev ? { ...prev, status: 'concluded', concludedAt: new Date().toISOString() } : null);
     } catch (err) {
       console.error('Failed to cancel mentorship', err);
     } finally {
@@ -739,20 +756,43 @@ export function MentorshipSpace() {
     <div className="flex-1 min-h-0 flex bg-bg-primary border border-border overflow-hidden rounded-2xl shadow-sm">
       {/* List sidebar */}
       <div className="w-80 min-h-0 border-r border-border flex flex-col bg-bg-secondary/50">
-        <div className="p-8 border-b border-border">
-          <div className="flex items-center justify-between mb-8">
-            <div className="space-y-1">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-primary">Mentorship Command</p>
-              <h2 className="text-2xl font-bold text-text-primary tracking-tight">Active Spaces</h2>
-            </div>
+        <div className="p-6 border-b border-border space-y-4">
+          <div className="space-y-1">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-primary">Mentorship Command</p>
+            <h2 className="text-xl font-bold text-text-primary tracking-tight">Mentorship Spaces</h2>
           </div>
+          
           <div className="relative">
-            <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-text-muted" />
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
             <input 
               type="text" 
-              placeholder="FILTER CONNECTIONS..." 
-              className="w-full pl-10 pr-4 py-3 bg-bg-primary border border-border rounded-xl text-[10px] font-bold tracking-widest text-text-primary focus:border-primary outline-none transition-all placeholder:text-text-muted/50"
+              value={sidebarSearch}
+              onChange={(e) => setSidebarSearch(e.target.value)}
+              placeholder="Filter spaces..." 
+              className="w-full pl-9 pr-3 py-2 bg-bg-primary border border-border rounded-xl text-xs text-text-primary focus:border-primary outline-none transition-all placeholder:text-text-muted/50"
             />
+          </div>
+
+          {/* Active vs Concluded Filter Pills */}
+          <div className="flex gap-1.5 p-1 bg-bg-primary rounded-xl border border-border text-[10px] font-bold">
+            <button
+              onClick={() => setSidebarFilter('all')}
+              className={`flex-1 py-1 rounded-lg transition-all ${sidebarFilter === 'all' ? 'bg-primary text-white shadow-xs' : 'text-text-muted hover:text-text-primary'}`}
+            >
+              All ({connections.length})
+            </button>
+            <button
+              onClick={() => setSidebarFilter('active')}
+              className={`flex-1 py-1 rounded-lg transition-all ${sidebarFilter === 'active' ? 'bg-primary text-white shadow-xs' : 'text-text-muted hover:text-text-primary'}`}
+            >
+              Active ({connections.filter(c => c.status !== 'concluded').length})
+            </button>
+            <button
+              onClick={() => setSidebarFilter('concluded')}
+              className={`flex-1 py-1 rounded-lg transition-all ${sidebarFilter === 'concluded' ? 'bg-primary text-white shadow-xs' : 'text-text-muted hover:text-text-primary'}`}
+            >
+              Archived ({connections.filter(c => c.status === 'concluded').length})
+            </button>
           </div>
         </div>
         
@@ -763,32 +803,62 @@ export function MentorshipSpace() {
               <p className="text-[10px] font-bold uppercase tracking-widest text-text-muted">No networks active</p>
             </div>
           ) : (
-            connections.map((conn) => (
-              <button
-                key={conn.id}
-                onClick={() => setSelectedConn(conn)}
-                className={`w-full p-4 rounded-xl flex items-center gap-4 transition-all relative group ${
-                  selectedConn?.id === conn.id 
-                    ? 'bg-bg-primary border border-border shadow-xs' 
-                    : 'hover:bg-bg-tertiary border border-transparent'
-                }`}
-              >
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-sm font-black uppercase tracking-wider border transition-all duration-500 ${
-                  selectedConn?.id === conn.id ? 'bg-primary text-white border-primary' : 'bg-bg-tertiary border-border text-text-muted group-hover:border-primary/40'
-                }`}>
-                  {((profile?.role === 'mentor' ? conn.menteeName : conn.mentorName) || 'U').trim().slice(0, 2).toUpperCase()}
-                </div>
-                <div className="text-left flex-1 min-w-0">
-                  <p className={`font-bold text-sm tracking-tight transition-colors truncate ${selectedConn?.id === conn.id ? 'text-text-primary' : 'text-text-secondary'}`}>
-                    {profile?.role === 'mentor' ? conn.menteeName : conn.mentorName}
-                  </p>
-                  <p className="text-[9px] font-bold text-text-muted uppercase tracking-widest mt-0.5">ACTIVE COHORT</p>
-                </div>
-                {selectedConn?.id === conn.id && (
-                  <motion.div layoutId="active-chat" className="absolute right-4 w-2 h-2 bg-primary rounded-full shadow-lg shadow-primary/50" />
-                )}
-              </button>
-            ))
+            (() => {
+              const filteredList = connections.filter(conn => {
+                const name = (profile?.role === 'mentor' ? conn.menteeName : conn.mentorName) || '';
+                const matchSearch = !sidebarSearch.trim() || name.toLowerCase().includes(sidebarSearch.toLowerCase());
+                if (!matchSearch) return false;
+                if (sidebarFilter === 'active') return conn.status !== 'concluded';
+                if (sidebarFilter === 'concluded') return conn.status === 'concluded';
+                return true;
+              });
+
+              if (filteredList.length === 0) {
+                return (
+                  <div className="py-12 text-center text-text-muted text-xs">
+                    No mentorship spaces in this category.
+                  </div>
+                );
+              }
+
+              return filteredList.map((conn) => {
+                const connIsConcluded = conn.status === 'concluded';
+                return (
+                  <button
+                    key={conn.id}
+                    onClick={() => setSelectedConn(conn)}
+                    className={`w-full p-3.5 rounded-xl flex items-center gap-3.5 transition-all relative group text-left ${
+                      selectedConn?.id === conn.id 
+                        ? 'bg-bg-primary border border-border shadow-xs' 
+                        : 'hover:bg-bg-tertiary border border-transparent'
+                    }`}
+                  >
+                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-xs font-black uppercase tracking-wider border transition-all duration-500 shrink-0 ${
+                      selectedConn?.id === conn.id 
+                        ? (connIsConcluded ? 'bg-amber-500/20 text-amber-600 border-amber-500/30' : 'bg-primary text-white border-primary')
+                        : 'bg-bg-tertiary border-border text-text-muted group-hover:border-primary/40'
+                    }`}>
+                      {((profile?.role === 'mentor' ? conn.menteeName : conn.mentorName) || 'U').trim().slice(0, 2).toUpperCase()}
+                    </div>
+                    <div className="text-left flex-1 min-w-0">
+                      <p className={`font-bold text-xs tracking-tight transition-colors truncate ${selectedConn?.id === conn.id ? 'text-text-primary' : 'text-text-secondary'}`}>
+                        {profile?.role === 'mentor' ? conn.menteeName : conn.mentorName}
+                      </p>
+                      {connIsConcluded ? (
+                        <p className="text-[9px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider mt-0.5 flex items-center gap-1">
+                          <Lock className="w-2.5 h-2.5" /> ARCHIVED HISTORY
+                        </p>
+                      ) : (
+                        <p className="text-[9px] font-bold text-success uppercase tracking-widest mt-0.5">ACTIVE COHORT</p>
+                      )}
+                    </div>
+                    {selectedConn?.id === conn.id && (
+                      <motion.div layoutId="active-chat" className={`w-2 h-2 rounded-full shadow-lg ${connIsConcluded ? 'bg-amber-500 shadow-amber-500/50' : 'bg-primary shadow-primary/50'}`} />
+                    )}
+                  </button>
+                );
+              });
+            })()
           )}
         </div>
       </div>
@@ -800,7 +870,11 @@ export function MentorshipSpace() {
             {/* Upper Action Command Deck */}
             <header className="py-4 px-8 border-b border-border flex flex-col md:flex-row md:justify-between md:items-center bg-bg-primary/80 backdrop-blur-md sticky top-0 z-10 gap-4">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-primary to-primary-hover flex items-center justify-center text-white font-black text-sm uppercase tracking-wider shadow-md shadow-primary/10 shrink-0">
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center font-black text-sm uppercase tracking-wider shadow-md shrink-0 ${
+                  isConcluded 
+                    ? 'bg-amber-500/15 text-amber-600 border-2 border-amber-500/30' 
+                    : 'bg-gradient-to-tr from-primary to-primary-hover text-white shadow-primary/10'
+                }`}>
                   {((profile?.role === 'mentor' ? selectedConn.menteeName : selectedConn.mentorName) || 'U').trim().slice(0, 2).toUpperCase()}
                 </div>
                 <div className="space-y-1">
@@ -808,22 +882,37 @@ export function MentorshipSpace() {
                     {profile?.role === 'mentor' ? selectedConn.menteeName : selectedConn.mentorName}
                   </h3>
                   <div className="flex items-center gap-1.5">
-                    <div className="w-2 h-2 bg-success rounded-full animate-pulse shadow-sm shadow-success/40" />
-                    <p className="text-[10px] uppercase font-black tracking-wider text-success font-mono">Active Now</p>
+                    {isConcluded ? (
+                      <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/25 text-amber-600 font-mono text-[9px] font-bold uppercase tracking-wider">
+                        <Lock className="w-3 h-3 text-amber-500" />
+                        <span>Concluded • Archived</span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="w-2 h-2 bg-success rounded-full animate-pulse shadow-sm shadow-success/40" />
+                        <p className="text-[10px] uppercase font-black tracking-wider text-success font-mono">Active Now</p>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
               
               {/* Actions with Labels */}
               <div className="flex items-center gap-3 shrink-0">
-                <button 
-                  onClick={() => setShowCancelConfirm(true)}
-                  title="Conclude Cohort Connection"
-                  className="px-4 py-2.5 rounded-xl flex items-center gap-2 bg-error/5 hover:bg-error-light text-text-secondary hover:text-error border border-border/80 hover:border-error/20 transition-all font-bold text-[10px] uppercase tracking-wider"
-                >
-                  <UserX className="w-4 h-4 text-error" />
-                  <span>Conclude</span>
-                </button>
+                {!isConcluded ? (
+                  <button 
+                    onClick={() => setShowCancelConfirm(true)}
+                    title="Conclude Cohort Connection"
+                    className="px-4 py-2.5 rounded-xl flex items-center gap-2 bg-error/5 hover:bg-error-light text-text-secondary hover:text-error border border-border/80 hover:border-error/20 transition-all font-bold text-[10px] uppercase tracking-wider cursor-pointer"
+                  >
+                    <UserX className="w-4 h-4 text-error" />
+                    <span>Conclude</span>
+                  </button>
+                ) : (
+                  <span className="px-3.5 py-2 rounded-xl bg-bg-secondary border border-border text-text-muted text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> History Preserved
+                  </span>
+                )}
               </div>
             </header>
 
@@ -854,6 +943,21 @@ export function MentorshipSpace() {
                 <Calendar className="w-4 h-4" /> 1-on-1 Scheduled Meetings
               </button>
             </div>
+
+            {/* CONCLUDED ARCHIVE BANNER */}
+            {isConcluded && (
+              <div className="mx-8 mt-4 p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-center gap-3 text-left">
+                <Lock className="w-5 h-5 text-amber-600 shrink-0" />
+                <div>
+                  <p className="text-xs font-bold text-amber-600 uppercase tracking-wider">
+                    Mentorship Concluded • Archived History
+                  </p>
+                  <p className="text-[11px] text-text-secondary mt-0.5">
+                    This mentorship is officially concluded. All workspaces, chats, and scheduled meetings are in read-only archive mode. Past conversation logs, task reviews, and milestone records are permanently preserved.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* PANEL RENDER AREAS */}
             <div className="flex-1 overflow-y-auto custom-scrollbar bg-bg-secondary/15">
@@ -1038,32 +1142,44 @@ export function MentorshipSpace() {
                       <div ref={messagesEndRef} />
                     </div>
 
-                    {/* Chat Text area input */}
+                    {/* Chat Text area input or Concluded Archive Notice */}
                     <div className="p-6 bg-bg-primary border-t border-border">
-                      <form onSubmit={handleSendMessage} className="flex items-center gap-3 bg-bg-secondary p-1.5 pr-4 rounded-xl border border-border focus-within:border-primary transition-all">
-                        <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
-                        <button 
-                          type="button" 
-                          onClick={() => fileInputRef.current?.click()}
-                          className="w-9 h-9 rounded-lg flex items-center justify-center text-text-muted hover:text-primary transition-colors"
-                        >
-                          <Paperclip className="w-5 h-5" />
-                        </button>
-                        <input
-                          type="text"
-                          value={newMessage}
-                          onChange={(e) => setNewMessage(e.target.value)}
-                          placeholder="Type your message here..."
-                          className="flex-1 bg-transparent py-3 px-1 outline-none text-xs text-text-primary font-medium placeholder:text-text-muted/40"
-                        />
-                        <button
-                          type="submit"
-                          disabled={!newMessage.trim()}
-                          className="w-10 h-10 rounded-lg bg-primary text-white flex items-center justify-center disabled:opacity-30 hover:scale-105 active:scale-95 transition-all shadow-xs"
-                        >
-                          <SendHorizontal className="w-4 h-4" />
-                        </button>
-                      </form>
+                      {isConcluded ? (
+                        <div className="p-4 bg-bg-secondary rounded-2xl border border-border text-center space-y-1">
+                          <div className="inline-flex items-center gap-2 text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
+                            <Lock className="w-4 h-4" />
+                            <span>Mentorship Concluded • Chat is Archived</span>
+                          </div>
+                          <p className="text-[11px] text-text-muted">
+                            New messaging is closed for this mentorship. All previous message history and shared materials are permanently preserved above.
+                          </p>
+                        </div>
+                      ) : (
+                        <form onSubmit={handleSendMessage} className="flex items-center gap-3 bg-bg-secondary p-1.5 pr-4 rounded-xl border border-border focus-within:border-primary transition-all">
+                          <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
+                          <button 
+                            type="button" 
+                            onClick={() => fileInputRef.current?.click()}
+                            className="w-9 h-9 rounded-lg flex items-center justify-center text-text-muted hover:text-primary transition-colors"
+                          >
+                            <Paperclip className="w-5 h-5" />
+                          </button>
+                          <input
+                            type="text"
+                            value={newMessage}
+                            onChange={(e) => setNewMessage(e.target.value)}
+                            placeholder="Type your message here..."
+                            className="flex-1 bg-transparent py-3 px-1 outline-none text-xs text-text-primary font-medium placeholder:text-text-muted/40"
+                          />
+                          <button
+                            type="submit"
+                            disabled={!newMessage.trim()}
+                            className="w-10 h-10 rounded-lg bg-primary text-white flex items-center justify-center disabled:opacity-30 hover:scale-105 active:scale-95 transition-all shadow-xs"
+                          >
+                            <SendHorizontal className="w-4 h-4" />
+                          </button>
+                        </form>
+                      )}
                     </div>
                   </motion.div>
                 )}
@@ -1474,13 +1590,19 @@ export function MentorshipSpace() {
                         <h4 className="text-xs font-bold text-text-muted uppercase tracking-widest">
                           MY PLANNED CALL CHRONOLOGY
                         </h4>
-                        <button
-                          type="button"
-                          onClick={() => setShowRequestMeetingModal(true)}
-                          className="bg-primary hover:bg-primary-hover text-white px-5 py-2.5 rounded-full font-bold text-xs shadow-md shadow-primary/20 flex items-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
-                        >
-                          <Plus className="w-4 h-4" /> Request Meeting
-                        </button>
+                        {!isConcluded ? (
+                          <button
+                            type="button"
+                            onClick={() => setShowRequestMeetingModal(true)}
+                            className="bg-primary hover:bg-primary-hover text-white px-5 py-2.5 rounded-full font-bold text-xs shadow-md shadow-primary/20 flex items-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+                          >
+                            <Plus className="w-4 h-4" /> Request Meeting
+                          </button>
+                        ) : (
+                          <span className="px-3.5 py-1.5 rounded-full bg-bg-secondary border border-border text-text-muted text-[10px] font-bold uppercase tracking-wider inline-flex items-center gap-1.5">
+                            <Lock className="w-3.5 h-3.5 text-amber-500" /> Scheduling Closed (Mentorship Concluded)
+                          </span>
+                        )}
                       </div>
 
                       {/* Body Content */}
@@ -2025,7 +2147,16 @@ export function MentorshipSpace() {
       );
     }
 
-    // Task is active - show Submit Evidence button
+    // Task is active - show Submit Evidence button (if active) or Concluded notice
+    if (isConcluded) {
+      return (
+        <div className="mt-3 p-3 bg-bg-secondary border border-border rounded-xl flex items-center gap-2 text-text-muted text-[10px] font-bold uppercase tracking-wider">
+          <Lock className="w-3.5 h-3.5 text-amber-500" />
+          <span>Mentorship Concluded • Task Submissions Closed</span>
+        </div>
+      );
+    }
+
     return (
       <div className="flex gap-2.5 pt-2">
         <button

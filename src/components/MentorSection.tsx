@@ -69,7 +69,8 @@ export function MentorSection() {
       setActiveTab(view);
       // reset selected mentee on workspace transition if none set
       if (view === 'mentor-workspace' && activeConnections.length > 0 && !selectedMentee) {
-        setSelectedMentee(activeConnections[0]);
+        const activeOne = activeConnections.find(c => c.status !== 'concluded');
+        setSelectedMentee(activeOne || activeConnections[0]);
       }
     }
   }, [view, activeConnections, selectedMentee]);
@@ -800,7 +801,7 @@ CareerBridge Verified Expert Mentor`;
                 <div className="p-5 bg-card border border-border rounded-xl flex items-center justify-between shadow-xs">
                   <div className="space-y-1">
                     <p className="text-[10px] uppercase font-bold text-text-muted tracking-wider">Active Mentees</p>
-                    <h4 className="text-3xl font-extrabold text-text-primary">{activeConnections.filter(c => c.status !== 'completed').length}</h4>
+                    <h4 className="text-3xl font-extrabold text-text-primary">{activeConnections.filter(c => c.status !== 'completed' && c.status !== 'concluded').length}</h4>
                     <p className="text-xs text-text-secondary">Connected slots limits: {profile?.maxMentees || 8}</p>
                   </div>
                   <div className="w-10 h-10 rounded-lg bg-bg-secondary flex items-center justify-center text-text-secondary border border-border">
@@ -1141,10 +1142,16 @@ CareerBridge Verified Expert Mentor`;
                               <p className="text-[10px] text-text-muted">Joined: {new Date(conn.createdAt).toLocaleDateString()}</p>
                             </div>
                             
-                            {/* COMPETENCY SCORE BADGE */}
-                            <span className="text-[10px] font-bold text-green-600 bg-green-500/10 border border-green-500/20 px-2 py-0.5 rounded flex items-center gap-1">
-                              Competency Score: {compScore}%
-                            </span>
+                            {/* STATUS / COMPETENCY SCORE BADGE */}
+                            {conn.status === 'concluded' ? (
+                              <span className="text-[10px] font-bold text-amber-600 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded flex items-center gap-1 font-mono">
+                                🔒 Concluded
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold text-green-600 bg-green-500/10 border border-green-500/20 px-2 py-0.5 rounded flex items-center gap-1">
+                                Competency Score: {compScore}%
+                              </span>
+                            )}
                           </div>
 
                           {/* SESSION PROGRESS BAR */}
@@ -1236,7 +1243,9 @@ CareerBridge Verified Expert Mentor`;
                   >
                     <option value="" disabled>Select Mentee Profile</option>
                     {activeConnections.map(c => (
-                      <option key={c.id} value={c.id}>{c.menteeName}</option>
+                      <option key={c.id} value={c.id}>
+                        {c.menteeName} {c.status === 'concluded' ? '• (Concluded / Archived)' : ''}
+                      </option>
                     ))}
                   </select>
                 </div>

@@ -8,7 +8,7 @@ import {
 import { 
   Users, ChevronRight, Search, Clock, Check, X, 
   ArrowUpRight, Heart, Star, Sparkles, MessageSquare,
-  ShieldCheck, AlertCircle, Award, Briefcase, RefreshCw, Layers, User
+  ShieldCheck, AlertCircle, Award, Briefcase, RefreshCw, Layers, User, Lock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MentorMenteesWorkspace } from './MentorMenteesWorkspace';
@@ -79,7 +79,8 @@ export function MyMenteesOverview({ setView }: { setView: (view: string) => void
 
   // Accept a pending request from graduate
   const handleAcceptRequest = async (request: any) => {
-    if (connections.length >= 10) {
+    const activeCount = connections.filter(c => c.status !== 'concluded').length;
+    if (activeCount >= 10) {
       alert('You have reached your active mentee limit (10). Please complete current mentees before accepting more.');
       return;
     }
@@ -153,7 +154,8 @@ export function MyMenteesOverview({ setView }: { setView: (view: string) => void
 
   // Direct connect invite from mentor to a graduate student
   const handleInviteGraduate = async (grad: any) => {
-    if (connections.length >= 10) {
+    const activeCount = connections.filter(c => c.status !== 'concluded').length;
+    if (activeCount >= 10) {
       alert('Active mentee slots full (10). Cannot add more candidates.');
       return;
     }
@@ -342,26 +344,39 @@ export function MyMenteesOverview({ setView }: { setView: (view: string) => void
                 filteredConnections.map((conn) => {
                   const initials = conn.menteeName?.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase() || 'ST';
                   const isReady = conn.progress >= 100;
+                  const isConcluded = conn.status === 'concluded';
 
                   return (
                     <div 
                       key={conn.id} 
-                      className="bg-bg-secondary border border-border hover:border-primary/20 transition-all rounded-2xl p-6 flex flex-col justify-between space-y-6 shadow-sm group"
+                      className={`border transition-all rounded-2xl p-6 flex flex-col justify-between space-y-6 shadow-sm group ${
+                        isConcluded 
+                          ? 'bg-bg-secondary/60 border-amber-500/25' 
+                          : 'bg-bg-secondary border-border hover:border-primary/20'
+                      }`}
                     >
                       <div className="space-y-4">
                         <div className="flex items-start justify-between">
                           <div className="flex items-center gap-3">
-                            <div className="w-11 h-11 rounded-xl bg-[#534AB7]/10 text-[#534AB7] flex items-center justify-center font-bold text-md">
+                            <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-bold text-md ${
+                              isConcluded ? 'bg-amber-500/10 text-amber-600' : 'bg-[#534AB7]/10 text-[#534AB7]'
+                            }`}>
                               {initials}
                             </div>
                             <div>
                               <h4 className="font-bold text-text-primary text-md leading-tight group-hover:text-[#534AB7] transition-colors">{conn.menteeName}</h4>
-                              <p className="text-[11px] text-text-muted mt-0.5 uppercase tracking-wider font-semibold">Active Companion</p>
+                              <p className={`text-[11px] mt-0.5 uppercase tracking-wider font-semibold ${isConcluded ? 'text-amber-600' : 'text-text-muted'}`}>
+                                {isConcluded ? 'Concluded Mentee' : 'Active Companion'}
+                              </p>
                             </div>
                           </div>
-                          {isReady && (
+                          {isConcluded ? (
+                            <span className="text-[9px] px-2.5 py-1 bg-amber-500/10 text-amber-600 border border-amber-500/20 rounded-full font-bold flex items-center gap-1">
+                              <Lock className="w-2.5 h-2.5" /> ARCHIVED
+                            </span>
+                          ) : isReady ? (
                             <span className="text-[9px] px-2.5 py-1 bg-green-500/10 text-green-500 border border-green-500/15 rounded-full font-bold">READY CERTIFICATION</span>
-                          )}
+                          ) : null}
                         </div>
 
                         {/* Progress */}
@@ -380,9 +395,11 @@ export function MyMenteesOverview({ setView }: { setView: (view: string) => void
                         <span className="text-[10px] text-text-muted font-mono uppercase">ESTABLISHED: {new Date(conn.createdAt).toLocaleDateString()}</span>
                         <button 
                           onClick={() => setDetailedConnectionId(conn.id)}
-                          className="inline-flex items-center gap-1.5 text-xs font-bold text-[#534AB7] hover:underline"
+                          className={`inline-flex items-center gap-1.5 text-xs font-bold hover:underline ${
+                            isConcluded ? 'text-amber-600' : 'text-[#534AB7]'
+                          }`}
                         >
-                          Open Workspace <ChevronRight className="w-4 h-4" />
+                          {isConcluded ? 'View Archive' : 'Open Workspace'} <ChevronRight className="w-4 h-4" />
                         </button>
                       </div>
                     </div>

@@ -169,9 +169,13 @@ export function OneToOneSessionsPage({ activeConnections }: OneToOneSessionsPage
                   required
                 >
                   <option value="">Choose active candidate</option>
-                  {activeConnections.map(c => (
-                    <option key={c.id} value={c.id}>{c.menteeName}</option>
-                  ))}
+                  {activeConnections.filter(c => c.status !== 'concluded').length === 0 ? (
+                    <option value="" disabled>No active mentees (all concluded/archived)</option>
+                  ) : (
+                    activeConnections.filter(c => c.status !== 'concluded').map(c => (
+                      <option key={c.id} value={c.id}>{c.menteeName}</option>
+                    ))
+                  )}
                 </select>
               </div>
 

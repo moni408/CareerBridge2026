@@ -12,7 +12,7 @@ import {
   TrendingUp, BarChart3, AlertCircle, Heart, ShieldCheck, Mail, 
   Calendar, Check, Plus, Star, ArrowUpRight, HelpCircle, FileText, 
   User, CheckCircle, Flame, ExternalLink, CalendarDays, ClipboardCheck, 
-  ChevronRight, BadgeInfo, AlertTriangle, Download, AwardIcon
+  ChevronRight, BadgeInfo, AlertTriangle, Download, AwardIcon, Lock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { LearningSessionModule } from './LearningSessionModule';
@@ -1407,37 +1407,50 @@ export function MentorMenteesWorkspace({ initialTab, embeddedTab, passedConnecti
                       )}
                     </div>
 
-                    {/* Form input */}
+                    {/* Form input or Concluded notice */}
                     <div className="p-4 bg-bg-primary border-t border-border space-y-3">
-                      {messages.length > 0 && (
-                        <div className="flex justify-end">
-                          <button
-                            type="button"
-                            onClick={handleGenerateAiSmartReply}
-                            disabled={loadingAiReply}
-                            className="px-3 py-1.5 bg-secondary/10 hover:bg-secondary/15 border border-secondary/15 text-secondary text-[10px] font-bold rounded-lg flex items-center gap-1.5 cursor-pointer disabled:opacity-40 transition-all uppercase"
-                          >
-                            {loadingAiReply ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 animate-pulse" />}
-                            Draft Smart Reply with Gemini 3.5
-                          </button>
+                      {selectedConn?.status === 'concluded' ? (
+                        <div className="p-4 bg-bg-secondary rounded-xl border border-border text-center space-y-1">
+                          <p className="text-xs font-bold text-amber-600 uppercase tracking-wider flex items-center justify-center gap-1.5">
+                            <Lock className="w-3.5 h-3.5" /> Mentorship Concluded • Archived Chat
+                          </p>
+                          <p className="text-[11px] text-text-muted">
+                            New messaging is closed for this mentee. All past conversation messages are preserved above in read-only mode.
+                          </p>
                         </div>
+                      ) : (
+                        <>
+                          {messages.length > 0 && (
+                            <div className="flex justify-end">
+                              <button
+                                type="button"
+                                onClick={handleGenerateAiSmartReply}
+                                disabled={loadingAiReply}
+                                className="px-3 py-1.5 bg-secondary/10 hover:bg-secondary/15 border border-secondary/15 text-secondary text-[10px] font-bold rounded-lg flex items-center gap-1.5 cursor-pointer disabled:opacity-40 transition-all uppercase"
+                              >
+                                {loadingAiReply ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 animate-pulse" />}
+                                Draft Smart Reply with Gemini 3.5
+                              </button>
+                            </div>
+                          )}
+                          <form onSubmit={handleSendChatMessage} className="flex items-center gap-3 bg-bg-secondary p-2 pr-4 rounded-2xl border border-border focus-within:border-secondary transition-all shadow-inner">
+                            <input type="file" ref={fileInputRef} onChange={handleChatFileUpload} className="hidden" />
+                            <button type="button" onClick={() => fileInputRef.current?.click()} className="w-10 h-10 rounded-xl flex items-center justify-center text-text-muted hover:text-secondary hover:bg-bg-primary transition-all">
+                              <Paperclip className="w-5 h-5" />
+                            </button>
+                            <input 
+                              type="text" 
+                              value={newMessage}
+                              onChange={(e) => setNewMessage(e.target.value)}
+                              placeholder="TRANSIT SECURE MESSAGES..."
+                              className="flex-1 bg-transparent py-4 px-2 outline-none text-xs text-text-primary placeholder:text-text-muted/40"
+                            />
+                            <button type="submit" disabled={!newMessage.trim()} className="w-10 h-10 rounded-xl bg-secondary text-white flex items-center justify-center disabled:opacity-30 hover:scale-105 active:scale-95 transition-all">
+                              <Send className="w-4 h-4" />
+                            </button>
+                          </form>
+                        </>
                       )}
-                      <form onSubmit={handleSendChatMessage} className="flex items-center gap-3 bg-bg-secondary p-2 pr-4 rounded-2xl border border-border focus-within:border-secondary transition-all shadow-inner">
-                        <input type="file" ref={fileInputRef} onChange={handleChatFileUpload} className="hidden" />
-                        <button type="button" onClick={() => fileInputRef.current?.click()} className="w-10 h-10 rounded-xl flex items-center justify-center text-text-muted hover:text-secondary hover:bg-bg-primary transition-all">
-                          <Paperclip className="w-5 h-5" />
-                        </button>
-                        <input 
-                          type="text" 
-                          value={newMessage}
-                          onChange={(e) => setNewMessage(e.target.value)}
-                          placeholder="TRANSIT SECURE MESSAGES..."
-                          className="flex-1 bg-transparent py-4 px-2 outline-none text-xs text-text-primary placeholder:text-text-muted/40"
-                        />
-                        <button type="submit" disabled={!newMessage.trim()} className="w-10 h-10 rounded-xl bg-secondary text-white flex items-center justify-center disabled:opacity-30 hover:scale-105 active:scale-95 transition-all">
-                          <Send className="w-4 h-4" />
-                        </button>
-                      </form>
                     </div>
                   </motion.div>
                 )}
@@ -1451,13 +1464,19 @@ export function MentorMenteesWorkspace({ initialTab, embeddedTab, passedConnecti
                   >
                     <div className="flex justify-between items-center pb-3 border-b border-border">
                       <h4 className="text-[10px] font-bold text-[#EC4899] uppercase tracking-widest pl-3 border-l-4 border-[#EC4899]">Calendar Meetings</h4>
-                      <button 
-                        onClick={() => setShowAddSession(true)}
-                        className="btn-primary px-6 flex items-center gap-2 text-[10px] font-bold tracking-widest"
-                      >
-                        <Plus className="w-4 h-4" />
-                        ARRANGE NEW SESSION
-                      </button>
+                      {selectedConn?.status !== 'concluded' ? (
+                        <button 
+                          onClick={() => setShowAddSession(true)}
+                          className="btn-primary px-6 flex items-center gap-2 text-[10px] font-bold tracking-widest"
+                        >
+                          <Plus className="w-4 h-4" />
+                          ARRANGE NEW SESSION
+                        </button>
+                      ) : (
+                        <span className="px-3.5 py-1.5 rounded-full bg-bg-secondary border border-border text-text-muted text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                          <Lock className="w-3.5 h-3.5 text-amber-500" /> SESSIONS ARCHIVED
+                        </span>
+                      )}
                     </div>
 
                     {/* Scheduling Form Modal */}
