@@ -30,6 +30,11 @@
   --color-destructive: #DC2626;
   --color-destructive-foreground: #FFFFFF;
   
+  --color-success: #10B981;
+  --color-success-foreground: #FFFFFF;
+  --color-error: #EF4444;
+  --color-error-foreground: #FFFFFF;
+  
   --color-bg-primary: #F4F7FC;
   --color-bg-secondary: #FFFFFF;
   --color-bg-tertiary: #EEF3FF;

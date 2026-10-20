@@ -8,7 +8,7 @@ import {
   Trophy, MessageSquare, Briefcase as BriefcaseIcon, 
   ExternalLink, Sparkles, AlertCircle, TrendingDown,
   LayoutDashboard, Search, Clock, ArrowUpRight, Check, Edit3, HelpCircle,
-  Award, FileText, X, Download, Plus, Loader2
+  Award, FileText, X, Download, Plus, Loader2, ShieldAlert, AlertTriangle
 } from 'lucide-react';
 import { 
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, 
@@ -727,40 +727,86 @@ export function Dashboard({ setView, currentView }: DashboardProps) {
         </div>
       </motion.div>
 
-      {/* Mentorship Endorsement Milestone Badge */}
-      {endorsements.length > 0 && (
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.98 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="p-6 bg-white border border-[#E4EAF4] rounded-[16px] flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm mb-6 mt-4 relative overflow-hidden"
-        >
-          <div className="flex items-center gap-4 text-left">
-            <div className="p-3 bg-[#EEF3FF] text-[#1B2A8F] rounded-xl shrink-0">
-              <Award className="w-6 h-6" />
-            </div>
-            <div className="text-left">
-              <h3 className="text-[16px] font-semibold text-[#0B1533]">Mentorship Milestone Certified</h3>
-              <p className="text-[13px] text-[#5A6B8C] mt-0.5">
-                Successfully completed the mentorship protocol under the guidance of <span className="font-semibold text-[#1B2A8F]">{endorsements[0].mentorName}</span>.
-              </p>
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                {(endorsements[0].skillsTaught || []).map((s: string, idx: number) => (
-                  <span key={idx} className="badge-pill badge-blue">
-                    ✓ {s}
-                  </span>
-                ))}
+      {/* Mentorship Endorsement or Disciplinary Warning Badge */}
+      {endorsements.length > 0 && (() => {
+        const warningEndorsement = endorsements.find(e => e.isNegative || e.type === 'disciplinary_warning');
+        const positiveEndorsement = endorsements.find(e => !e.isNegative && e.type !== 'disciplinary_warning');
+
+        if (warningEndorsement) {
+          return (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="p-6 bg-red-50/80 border-2 border-red-300 rounded-[16px] flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm mb-6 mt-4 relative overflow-hidden text-left"
+            >
+              <div className="flex items-center gap-4 text-left">
+                <div className="p-3.5 bg-red-100 text-red-600 rounded-2xl shrink-0 border border-red-200">
+                  <ShieldAlert className="w-6 h-6 animate-pulse" />
+                </div>
+                <div className="text-left">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 text-[9px] font-black uppercase rounded bg-red-200 text-red-800 tracking-wider">
+                      ⚠️ CareerBridge Disciplinary Notice
+                    </span>
+                    <span className="text-[11px] font-semibold text-red-700">Formal Warning</span>
+                  </div>
+                  <h3 className="text-[16px] font-extrabold text-red-900 mt-1">
+                    Mentorship Terminated & Formal Disciplinary Notice Issued
+                  </h3>
+                  <p className="text-[13px] text-red-800 mt-0.5 max-w-2xl leading-relaxed">
+                    Issued by <strong>CareerBridge Academic & Disciplinary Integrity Board</strong> following grievance filed by mentor <span className="font-bold">{warningEndorsement.mentorName}</span>. Your profile is flagged under formal system review due to {warningEndorsement.complaintCategory || 'non-attendance/inattentiveness'}.
+                  </p>
+                </div>
               </div>
-            </div>
-          </div>
-          <button
-            onClick={() => setSelectedEndorsementLetter(endorsements[0])}
-            className="btn-primary shrink-0 cursor-pointer flex items-center gap-2"
-          >
-            <FileText className="w-4 h-4" />
-            <span>View Endorsement Letter</span>
-          </button>
-        </motion.div>
-      )}
+              <button
+                onClick={() => setSelectedEndorsementLetter(warningEndorsement)}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-red-600/20 shrink-0 cursor-pointer flex items-center gap-2"
+              >
+                <FileText className="w-4 h-4" />
+                <span>View Disciplinary Notice</span>
+              </button>
+            </motion.div>
+          );
+        }
+
+        if (positiveEndorsement) {
+          return (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="p-6 bg-white border border-[#E4EAF4] rounded-[16px] flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm mb-6 mt-4 relative overflow-hidden"
+            >
+              <div className="flex items-center gap-4 text-left">
+                <div className="p-3 bg-[#EEF3FF] text-[#1B2A8F] rounded-xl shrink-0">
+                  <Award className="w-6 h-6" />
+                </div>
+                <div className="text-left">
+                  <h3 className="text-[16px] font-semibold text-[#0B1533]">Mentorship Milestone Certified</h3>
+                  <p className="text-[13px] text-[#5A6B8C] mt-0.5">
+                    Successfully completed the mentorship protocol under the guidance of <span className="font-semibold text-[#1B2A8F]">{positiveEndorsement.mentorName}</span>.
+                  </p>
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {(positiveEndorsement.skillsTaught || []).map((s: string, idx: number) => (
+                      <span key={idx} className="badge-pill badge-blue">
+                        ✓ {s}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedEndorsementLetter(positiveEndorsement)}
+                className="btn-primary shrink-0 cursor-pointer flex items-center gap-2"
+              >
+                <FileText className="w-4 h-4" />
+                <span>View Endorsement Letter</span>
+              </button>
+            </motion.div>
+          );
+        }
+
+        return null;
+      })()}
 
       {/* Intelligence Stat Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1110,26 +1156,42 @@ export function Dashboard({ setView, currentView }: DashboardProps) {
               </button>
 
               <div className="flex items-center gap-4 border-b border-border pb-5 mb-6">
-                <div className="p-3 bg-primary/10 text-primary rounded-2xl">
-                  <Award className="w-7 h-7" />
+                <div className={`p-3 rounded-2xl ${selectedEndorsementLetter.isNegative ? 'bg-red-500/10 text-red-600' : 'bg-primary/10 text-primary'}`}>
+                  {selectedEndorsementLetter.isNegative ? <ShieldAlert className="w-7 h-7" /> : <Award className="w-7 h-7" />}
                 </div>
                 <div className="text-left">
-                  <span className="text-[9px] font-bold text-primary uppercase tracking-widest bg-primary/10 px-2 py-0.5 rounded-full">Official Accreditation</span>
-                  <h3 className="text-xl font-extrabold text-text-primary mt-1">Verified Endorsement Letter</h3>
+                  <span className={`text-[9px] font-bold uppercase tracking-widest px-2.5 py-0.5 rounded-full ${selectedEndorsementLetter.isNegative ? 'bg-red-500/15 text-red-600 border border-red-500/30' : 'bg-primary/10 text-primary'}`}>
+                    {selectedEndorsementLetter.isNegative ? 'CareerBridge Academic & Disciplinary Integrity Board' : 'Official Accreditation'}
+                  </span>
+                  <h3 className="text-xl font-extrabold text-text-primary mt-1">
+                    {selectedEndorsementLetter.isNegative ? 'Official System Disciplinary Notice' : 'Verified Endorsement Letter'}
+                  </h3>
+                  {selectedEndorsementLetter.isNegative && (
+                    <p className="text-xs text-text-muted mt-0.5">
+                      Case Reference: <span className="font-mono font-bold text-text-primary">{selectedEndorsementLetter.caseReference || 'CB-WARN-REF'}</span>
+                    </p>
+                  )}
                 </div>
               </div>
 
-              <div className="bg-bg-secondary/60 border border-border/80 rounded-2xl p-6 font-mono text-xs text-text-primary whitespace-pre-wrap leading-relaxed overflow-y-auto max-h-[45vh] shadow-inner text-left">
+              <div className={`border rounded-2xl p-6 font-mono text-xs whitespace-pre-wrap leading-relaxed overflow-y-auto max-h-[45vh] shadow-inner text-left ${selectedEndorsementLetter.isNegative ? 'bg-[#0F172A] text-red-300 border-red-500/30' : 'bg-bg-secondary/60 text-text-primary border-border/80'}`}>
                 {selectedEndorsementLetter.letterText}
               </div>
 
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-6 border-t border-border mt-6 text-left">
                 <div>
-                  <p className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Status</p>
-                  <p className="text-xs font-extrabold text-success flex items-center gap-1.5 mt-0.5">
-                    <span className="w-2 h-2 rounded-full bg-success inline-block animate-pulse" />
-                    Successfully Endorsed & Certified
-                  </p>
+                  <p className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Standing / Status</p>
+                  {selectedEndorsementLetter.isNegative ? (
+                    <p className="text-xs font-extrabold text-red-600 flex items-center gap-1.5 mt-0.5">
+                      <span className="w-2 h-2 rounded-full bg-red-600 inline-block animate-pulse" />
+                      Profile Flagged — Under Disciplinary Warning (Risk of Suspension)
+                    </p>
+                  ) : (
+                    <p className="text-xs font-extrabold text-success flex items-center gap-1.5 mt-0.5">
+                      <span className="w-2 h-2 rounded-full bg-success inline-block animate-pulse" />
+                      Successfully Endorsed & Certified
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-3">
                   <button
@@ -1138,19 +1200,21 @@ export function Dashboard({ setView, currentView }: DashboardProps) {
                       const url = URL.createObjectURL(blob);
                       const link = document.createElement('a');
                       link.href = url;
-                      link.download = `Mentorship_Endorsement_${(selectedEndorsementLetter.mentorName || '').replace(/\s+/g, '_')}.txt`;
+                      link.download = selectedEndorsementLetter.isNegative 
+                        ? `CareerBridge_Disciplinary_Notice_${(selectedEndorsementLetter.caseReference || 'WARN')}.txt`
+                        : `Mentorship_Endorsement_${(selectedEndorsementLetter.mentorName || '').replace(/\s+/g, '_')}.txt`;
                       link.click();
                       URL.revokeObjectURL(url);
                     }}
                     className="px-5 py-2 bg-bg-secondary hover:bg-bg-tertiary border border-border text-text-primary rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
                   >
-                    <Download className="w-3.5 h-3.5" /> Download Letter (.txt)
+                    <Download className="w-3.5 h-3.5" /> {selectedEndorsementLetter.isNegative ? 'Download Notice (.txt)' : 'Download Letter (.txt)'}
                   </button>
                   <button
                     onClick={() => setSelectedEndorsementLetter(null)}
-                    className="px-5 py-2 bg-primary hover:bg-primary-hover text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+                    className={`px-5 py-2 text-white rounded-xl text-xs font-bold transition-all cursor-pointer ${selectedEndorsementLetter.isNegative ? 'bg-red-600 hover:bg-red-700' : 'bg-primary hover:bg-primary-hover'}`}
                   >
-                    Done
+                    {selectedEndorsementLetter.isNegative ? 'Acknowledge Notice' : 'Done'}
                   </button>
                 </div>
               </div>

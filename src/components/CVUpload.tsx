@@ -213,9 +213,10 @@ export function CVUpload({ setView, onComplete }: { setView: (view: any) => void
 
   // Merge verified mentorship endorsement into generatedCV experience & certifications
   useEffect(() => {
-    const activeEndorsement = (endorsements && endorsements.length > 0)
-      ? endorsements[0]
-      : (profile?.isEndorsed || profile?.endorsementMentorName)
+    const validPositiveEndorsements = (endorsements || []).filter((e: any) => !e.isNegative && e.type !== 'disciplinary_warning');
+    const activeEndorsement = (validPositiveEndorsements.length > 0)
+      ? validPositiveEndorsements[0]
+      : (!profile?.hasDisciplinaryWarning && (profile?.isEndorsed || profile?.endorsementMentorName))
       ? {
           mentorName: profile.endorsementMentorName || 'Senior Mentor',
           skillsTaught: (profile.skills || []).slice(0, 4).map((s: any) => typeof s === 'string' ? s : s?.name || ''),

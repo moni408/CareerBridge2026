@@ -123,6 +123,19 @@ export function LearningSessionModule({
   const [isAllLearningsComplete, setIsAllLearningsComplete] = useState<'yes' | 'no' | null>(null);
   const [showIssueCertModal, setShowIssueCertModal] = useState(false);
 
+  // Disciplinary Grievance & Complaint States
+  const [showDisciplinaryModal, setShowDisciplinaryModal] = useState(false);
+  const [complaintCategory, setComplaintCategory] = useState('Inattentiveness & Neglected Learning Milestones');
+  const [complaintDetails, setComplaintDetails] = useState('Mentee was consistently inattentive, missed scheduled learning milestones, and remained unresponsive to communications despite multiple reminders.');
+  const [disciplinaryAttentiveness, setDisciplinaryAttentiveness] = useState('15%');
+  const [disciplinaryRegularity, setDisciplinaryRegularity] = useState('10%');
+  const [disciplinaryInfractions, setDisciplinaryInfractions] = useState<string[]>([
+    'Student repeatedly missed scheduled mentoring sessions without notice',
+    'Inattentive, disengaged, or failed to communicate when contacted',
+    'Failed to complete or submit assigned learning milestone tasks'
+  ]);
+  const [filingComplaint, setFilingComplaint] = useState(false);
+
   // Certificate Form States
   const [certSkillsGained, setCertSkillsGained] = useState('');
   const [certWorkDesc, setCertWorkDesc] = useState('');
@@ -681,6 +694,56 @@ export function LearningSessionModule({
       // Save Certificate
       await setDoc(doc(db, 'certificates', connection.id), certData);
 
+      // Also Save Verified Positive Endorsement to 'endorsements' collection
+      await addDoc(collection(db, 'endorsements'), {
+        connectionId: connection.id,
+        mentorId: connection.mentorId,
+        mentorName: profile?.displayName || 'Verified Industry Mentor',
+        mentorTitle: profile?.title || 'Senior Mentor',
+        menteeId: connection.menteeId,
+        menteeName: connection.menteeName,
+        type: 'mentorship_completion',
+        isNegative: false,
+        status: 'endorsed',
+        issuerName: profile?.displayName || 'Industry Mentor',
+        skillsTaught: certSkillsGained.split(',').map(s => s.trim()).filter(Boolean),
+        workDescription: certWorkDesc.trim(),
+        attentiveness: certAttentiveness,
+        regularity: certRegularity,
+        letterText: `================================================================================
+CAREERBRIDGE ACCREDITATION & PROFESSIONAL ENDORSEMENT
+================================================================================
+DATE: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+RECIPIENT: ${connection.menteeName}
+ENDORSED BY: ${profile?.displayName || 'Industry Mentor'} (${profile?.title || 'Verified Mentor'})
+STATUS: OFFICIALLY ACCREDITED & VERIFIED
+--------------------------------------------------------------------------------
+
+Dear Hiring Partner & University Accreditation Committee,
+
+I am writing to formally provide my high-level professional endorsement for ${connection.menteeName}, whom I have directly guided and evaluated through the CareerBridge platform.
+
+Over our extensive collaborative sessions, ${connection.menteeName} demonstrated dedication, strong technical curiosity, and rapid problem-solving competency across:
+${certSkillsGained.split(',').map(s => `• ${s.trim()}`).join('\n')}
+
+PROJECT & PRACTICAL CAPSTONE SUMMARY:
+${certWorkDesc.trim()}
+
+PERFORMANCE METRICS:
+• Recorded Attentiveness: ${certAttentiveness}
+• Recorded Regularity & Attendance: ${certRegularity}
+
+EVALUATION & MENTOR RECOMMENDATION:
+"${certFeedback.trim() || 'Demonstrated outstanding dedication, consistent progress, and technical excellence throughout the mentorship program.'}"
+
+I wholeheartedly recommend ${connection.menteeName} for professional internship and software engineering roles.
+
+Sincerely,
+${profile?.displayName || 'Industry Mentor'}
+${profile?.title || 'CareerBridge Industry Mentor'}`,
+        createdAt: new Date().toISOString()
+      });
+
       // Conclude Mentorship Connection (Disables Active Communication)
       await updateDoc(doc(db, 'mentorship_connections', connection.id), {
         status: 'concluded',
@@ -706,6 +769,151 @@ export function LearningSessionModule({
       alert('Error issuing certificate.');
     } finally {
       setIssuingCert(false);
+    }
+  };
+
+  // File Mentor Disciplinary Grievance & Terminate Mentorship with Negative Warning
+  const handleFileMentorComplaint = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!complaintDetails.trim()) {
+      alert('Please provide detailed explanation for the complaint.');
+      return;
+    }
+
+    setFilingComplaint(true);
+    try {
+      const caseRef = `CB-WARN-${Date.now().toString().slice(-6)}`;
+      const complaintText = complaintDetails.trim();
+      const mentorDisplayName = profile?.displayName || 'Industry Mentor';
+
+      // 1. Conclude the Mentorship Connection with Disciplinary Reason
+      await updateDoc(doc(db, 'mentorship_connections', connection.id), {
+        status: 'concluded',
+        concludedReason: 'disciplinary_action',
+        terminationType: 'disciplinary_action',
+        complaintCategory,
+        mentorComplaint: complaintText,
+        concludedAt: new Date().toISOString()
+      });
+
+      // 2. Add Disciplinary Warning Notice Letter to 'endorsements' collection
+      const warningLetterText = `================================================================================
+CAREERBRIDGE ACADEMIC & DISCIPLINARY INTEGRITY BOARD
+OFFICIAL SYSTEM DISCIPLINARY NOTICE & ENDORSEMENT REVOCATION
+================================================================================
+DATE: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+CASE REFERENCE: ${caseRef}
+RECIPIENT: ${connection.menteeName}
+ASSIGNED MENTOR: ${mentorDisplayName} (${profile?.title || 'Industry Mentor'})
+STATUS: FORMAL SYSTEM WARNING & ACCREDITATION REVOKED
+--------------------------------------------------------------------------------
+
+Dear ${connection.menteeName},
+
+This is an official disciplinary communication issued directly by the CareerBridge Administration & Mentorship Governance Committee.
+
+We have received and reviewed a formal misconduct grievance submitted by your assigned mentor, ${mentorDisplayName}, regarding your failure to uphold candidate commitments during the active mentorship cycle.
+
+FORMAL GRIEVANCE & RECORDED INFRACTIONS:
+--------------------------------------------------------------------------------
+• Primary Infraction: ${complaintCategory}
+• Mentor Report & Observations:
+  "${complaintText}"
+• Recorded Attentiveness Rating: ${disciplinaryAttentiveness}
+• Recorded Session Attendance & Regularity: ${disciplinaryRegularity}
+• Specific Violations Noted:
+${disciplinaryInfractions.map(inf => `  - ${inf}`).join('\n')}
+
+ADMINISTRATIVE ACTIONS & CONSEQUENCES:
+--------------------------------------------------------------------------------
+1. MENTORSHIP CONNECTION TERMINATED:
+   Your active mentorship cycle with ${mentorDisplayName} has been terminated immediately with prejudice due to continuous unexcused non-attendance and communication breakdown.
+
+2. PROFESSIONAL ENDORSEMENT REVOKED:
+   No verified CareerBridge Certificate or professional recommendation letter will be issued. All pending verification credits for this engagement are cancelled.
+
+3. FORMAL SYSTEM WARNING & PLATFORM STANDING:
+   A formal disciplinary flag has been placed against your CareerBridge account. You have broken our collaborative learning protocol and mentor-candidate code of conduct.
+
+   ⚠️ WARNING: Continued negligence, non-responsiveness, or unexcused absenteeism in future mentorship cycles will result in your student profile being PERMANENTLY BANNED from CareerBridge, including complete revocation of university placement access, verified CV generation, and partner job applications.
+
+NEXT STEPS & CODE OF CONDUCT:
+--------------------------------------------------------------------------------
+Please treat your professional obligations and mentor commitments with the utmost seriousness. If you believe this notice was issued in error or wish to submit a written appeal to the governance committee, email integrity-appeals@careerbridge.ac quoting case reference ${caseRef}.
+
+Sincerely,
+CareerBridge Governance & Mentorship Oversight Committee
+Academic Integrity & Student Conduct Division`;
+
+      await addDoc(collection(db, 'endorsements'), {
+        connectionId: connection.id,
+        menteeId: connection.menteeId,
+        menteeName: connection.menteeName,
+        mentorId: connection.mentorId,
+        mentorName: mentorDisplayName,
+        mentorTitle: profile?.title || 'Senior Mentor',
+        type: 'disciplinary_warning',
+        isNegative: true,
+        status: 'warning_issued',
+        issuerName: 'CareerBridge Academic & Disciplinary Integrity Board',
+        complaintCategory,
+        complaintDetails: complaintText,
+        attentivenessScore: disciplinaryAttentiveness,
+        regularityScore: disciplinaryRegularity,
+        infractions: disciplinaryInfractions,
+        caseReference: caseRef,
+        letterText: warningLetterText,
+        skillsTaught: [],
+        createdAt: new Date().toISOString()
+      });
+
+      // 3. Update Student User Profile with Disciplinary Flag
+      try {
+        await updateDoc(doc(db, 'users', connection.menteeId), {
+          hasDisciplinaryWarning: true,
+          disciplinaryReason: complaintCategory,
+          disciplinaryMentor: mentorDisplayName,
+          disciplinaryDate: new Date().toISOString(),
+          isEndorsed: false
+        });
+      } catch (e) {
+        console.warn('Could not update user doc directly:', e);
+      }
+
+      // 4. Send Immediate Disciplinary Notification
+      await addDoc(collection(db, 'notifications'), {
+        recipientId: connection.menteeId,
+        type: 'disciplinary_warning',
+        title: '⚠️ URGENT: Disciplinary Warning from CareerBridge Team',
+        body: `Your mentorship with ${mentorDisplayName} was terminated due to reported inattentiveness / irregular attendance. An official warning notice has been placed on your profile.`,
+        isRead: false,
+        createdAt: new Date().toISOString()
+      });
+
+      // 5. Cross-role Email Alert
+      const menteeEmail = await resolveRecipientEmail(connection.menteeId, connection);
+      sendCrossRoleEmailNotification({
+        senderId: user?.uid,
+        senderName: 'CareerBridge Academic Integrity Board',
+        senderRole: 'system',
+        senderEmail: 'integrity@careerbridge.ac',
+        recipientId: connection.menteeId,
+        recipientName: connection.menteeName,
+        recipientRole: 'student',
+        subject: `⚠️ Disciplinary Notice: Mentorship Terminated & Formal Warning Issued`,
+        category: 'endorsement',
+        message: `CareerBridge Administration has issued a formal disciplinary warning regarding your mentorship protocol. Your mentor ${mentorDisplayName} reported inattention and missed sessions.\n\nCase Reference: ${caseRef}\nPlease review the official letter on your dashboard.`,
+        actionUrl: window.location.origin
+      }).catch(e => console.warn('Disciplinary email notice error:', e));
+
+      setShowDisciplinaryModal(false);
+      setShowEndMentorshipPanel(false);
+      alert('Formal disciplinary complaint filed. Mentorship terminated and CareerBridge warning notice issued to student.');
+    } catch (err) {
+      console.error('Failed to file disciplinary grievance:', err);
+      alert('Error filing disciplinary complaint.');
+    } finally {
+      setFilingComplaint(false);
     }
   };
 
@@ -872,21 +1080,36 @@ export function LearningSessionModule({
                     </label>
                   </div>
 
-                  {/* Initially Hidden Button - Appears if 'Yes' checked */}
+                  {/* Action Button - Appears if 'Yes' checked */}
                   {isAllLearningsComplete === 'yes' && (
                     <motion.button
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
                       onClick={() => {
                         setShowIssueCertModal(true);
                         // pre-fill skills
                         const completedSkills = skillsList.map(s => s.title).join(', ');
                         setCertSkillsGained(completedSkills || 'React, TypeScript, System Design');
                       }}
-                      className="w-full py-2.5 bg-success hover:bg-success/90 text-white font-extrabold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-md shadow-success/20 cursor-pointer"
+                      className="w-full py-3 bg-[#10B981] hover:bg-[#059669] text-white font-extrabold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 cursor-pointer"
                     >
-                      <Award className="w-4 h-4" />
-                      <span>Issue Certificate</span>
+                      <Award className="w-4 h-4 text-white shrink-0" />
+                      <span className="text-white font-black tracking-wide">Proceed to Issue Certificate</span>
+                    </motion.button>
+                  )}
+
+                  {/* Action Button - Appears if 'No' checked */}
+                  {isAllLearningsComplete === 'no' && (
+                    <motion.button
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      onClick={() => {
+                        setShowDisciplinaryModal(true);
+                      }}
+                      className="w-full py-3 bg-[#EF4444] hover:bg-[#DC2626] text-white font-extrabold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-red-500/25 cursor-pointer"
+                    >
+                      <AlertTriangle className="w-4 h-4 text-white shrink-0" />
+                      <span className="text-white font-black tracking-wide">Report Misconduct & Terminate</span>
                     </motion.button>
                   )}
                 </motion.div>
@@ -1547,6 +1770,177 @@ export function LearningSessionModule({
                 >
                   {issuingCert ? 'Issuing Certificate...' : '🎓 Generate & Issue Official Certificate'}
                 </button>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* MENTOR DISCIPLINARY COMPLAINT & TERMINATION MODAL */}
+      <AnimatePresence>
+        {showDisciplinaryModal && isMentor && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 15 }}
+              className="bg-card border-2 border-red-500/30 w-full max-w-xl rounded-2xl p-6 shadow-2xl space-y-5 text-left max-h-[92vh] overflow-y-auto"
+            >
+              <div className="flex justify-between items-center border-b border-border pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500 shrink-0">
+                    <ShieldAlert className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-base text-text-primary uppercase tracking-tight">Report Mentee Misconduct & File Grievance</h3>
+                    <p className="text-[11px] text-text-muted">Early termination protocol & CareerBridge disciplinary review</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowDisciplinaryModal(false)} 
+                  className="text-text-muted hover:text-text-primary p-1.5 rounded-lg hover:bg-bg-secondary cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Warning Context Notice */}
+              <div className="p-3.5 bg-red-500/10 border border-red-500/20 rounded-xl space-y-1 text-xs">
+                <p className="font-bold text-red-600 flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  Notice: Negative Endorsement & Disciplinary Action
+                </p>
+                <p className="text-text-secondary leading-relaxed">
+                  Submitting this report will permanently conclude this mentorship connection. An <strong>Official CareerBridge Disciplinary Warning Notice</strong> will be sent from the CareerBridge Administration to the student's dashboard, notifying them of a protocol breach and warning that repeated negligence will result in their profile being permanently banned.
+                </p>
+              </div>
+
+              <form onSubmit={handleFileMentorComplaint} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary uppercase mb-1">Mentee Candidate</label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={connection.menteeName}
+                    className="w-full bg-bg-secondary border border-border rounded-xl p-2.5 text-xs font-semibold select-none text-text-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary uppercase mb-1">
+                    Primary Grievance Category *
+                  </label>
+                  <select
+                    value={complaintCategory}
+                    onChange={(e) => setComplaintCategory(e.target.value)}
+                    className="w-full bg-bg-secondary border border-border rounded-xl p-2.5 text-xs font-semibold text-text-primary focus:outline-none focus:border-red-500"
+                  >
+                    <option value="Inattentiveness & Neglected Learning Milestones">Inattentiveness & Neglected Learning Milestones</option>
+                    <option value="Irregular Attendance & Missed Scheduled Sessions">Irregular Attendance & Missed Scheduled Sessions</option>
+                    <option value="Unresponsive & Non-Communicative Behavior">Unresponsive & Non-Communicative Behavior</option>
+                    <option value="Unsatisfactory Effort & Habitual Deadline Breaches">Unsatisfactory Effort & Habitual Deadline Breaches</option>
+                    <option value="Breach of CareerBridge Candidate Code of Conduct">Breach of CareerBridge Candidate Code of Conduct</option>
+                  </select>
+                </div>
+
+                {/* Specific Infraction Checkboxes */}
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary uppercase mb-1.5">
+                    Specific Infractions Observed
+                  </label>
+                  <div className="space-y-2 text-xs">
+                    {[
+                      'Student repeatedly missed scheduled mentoring sessions without notice',
+                      'Inattentive, disengaged, or failed to communicate when contacted',
+                      'Failed to complete or submit assigned learning milestone tasks',
+                      'Lack of effort or commitment towards technical milestones'
+                    ].map((inf, idx) => (
+                      <label key={idx} className="flex items-center gap-2 p-2 rounded-lg border border-border/80 bg-bg-secondary/60 hover:bg-bg-secondary cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={disciplinaryInfractions.includes(inf)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setDisciplinaryInfractions([...disciplinaryInfractions, inf]);
+                            } else {
+                              setDisciplinaryInfractions(disciplinaryInfractions.filter(i => i !== inf));
+                            }
+                          }}
+                          className="w-4 h-4 accent-red-500 rounded"
+                        />
+                        <span className="text-text-primary font-medium">{inf}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Complaint Details Statement */}
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary uppercase mb-1">
+                    Mentor Written Explanation / Complaint Statement *
+                  </label>
+                  <textarea
+                    rows={4}
+                    required
+                    value={complaintDetails}
+                    onChange={(e) => setComplaintDetails(e.target.value)}
+                    placeholder="Provide specific notes regarding why you are ending the mentorship (e.g. mentee was inattentive, missed all sessions, did not respond to messages, failed deliverables)..."
+                    className="w-full bg-bg-secondary border border-border rounded-xl p-2.5 text-xs focus:outline-none focus:border-red-500 text-text-primary leading-relaxed"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-text-secondary uppercase mb-1">Attentiveness Score</label>
+                    <input
+                      type="text"
+                      value={disciplinaryAttentiveness}
+                      onChange={(e) => setDisciplinaryAttentiveness(e.target.value)}
+                      className="w-full bg-bg-secondary border border-border rounded-xl p-2.5 text-xs font-semibold focus:outline-none focus:border-red-500 text-red-600"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-text-secondary uppercase mb-1">Attendance / Regularity Score</label>
+                    <input
+                      type="text"
+                      value={disciplinaryRegularity}
+                      onChange={(e) => setDisciplinaryRegularity(e.target.value)}
+                      className="w-full bg-bg-secondary border border-border rounded-xl p-2.5 text-xs font-semibold focus:outline-none focus:border-red-500 text-red-600"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowDisciplinaryModal(false)}
+                    className="flex-1 py-3 bg-bg-secondary hover:bg-bg-tertiary border border-border text-text-primary font-bold text-xs rounded-xl transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={filingComplaint}
+                    className="flex-2 py-3 bg-red-600 hover:bg-red-700 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-red-500/25 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    {filingComplaint ? (
+                      <span className="flex items-center gap-2">
+                        <RefreshCw className="w-4 h-4 animate-spin" /> Filing Report...
+                      </span>
+                    ) : (
+                      <>
+                        <ShieldAlert className="w-4 h-4" />
+                        <span>Issue Formal Warning & Terminate</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </form>
             </motion.div>
           </motion.div>
